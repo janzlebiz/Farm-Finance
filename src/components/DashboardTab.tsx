@@ -19,12 +19,14 @@ interface DashboardTabProps {
   onOpenNewSale: () => void;
   onOpenNewExpense: () => void;
   onNavigateToTab: (tab: string) => void;
+  onOpenInstall?: () => void;
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({
   onOpenNewSale,
   onOpenNewExpense,
-  onNavigateToTab
+  onNavigateToTab,
+  onOpenInstall
 }) => {
   const [dateFilter, setDateFilter] = useState<DateFilterType>('month');
   const [customStart, setCustomStart] = useState<string>('');
@@ -229,6 +231,30 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Install App on Phone Card */}
+      {onOpenInstall && (
+        <div
+          onClick={onOpenInstall}
+          className="bg-emerald-50 border border-emerald-200/90 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-emerald-100/70 transition shadow-xs"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-emerald-700 text-white rounded-lg shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                <span>Install Farm Finance on Phone</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-200 text-emerald-900 font-bold uppercase">Offline Ready</span>
+              </div>
+              <div className="text-[11px] text-emerald-700">
+                1-click install for Android & iOS or download native APK
+              </div>
+            </div>
+          </div>
+          <span className="text-emerald-800 font-bold text-xs">Install →</span>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="pt-2 grid grid-cols-2 gap-3">

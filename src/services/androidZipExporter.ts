@@ -294,6 +294,67 @@ class FinancialCalculationsTest {
     category: 'Tests & Docs',
     content: `# Farm Finance — Android Mobile Application
 Native Android Studio project built with Kotlin, Jetpack Compose, Room SQLite Database v2, and Android Keystore.`
+  },
+  {
+    path: '.github/workflows/android.yml',
+    category: 'Gradle & Config',
+    content: `name: Build Standalone Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build & Package Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Prepare Gradle Wrapper
+        working-directory: ./android
+        run: |
+          if [ ! -f "gradlew" ]; then
+            gradle wrapper --gradle-version 8.4 --distribution-type bin || true
+          fi
+          chmod +x gradlew || true
+
+      - name: Run Financial & Core Unit Tests
+        working-directory: ./android
+        run: ./gradlew test
+
+      - name: Build Standalone Debug APK
+        working-directory: ./android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Rename APK for Clarity
+        working-directory: ./android
+        run: |
+          mkdir -p outputs
+          cp app/build/outputs/apk/debug/app-debug.apk outputs/FarmFinance-v1.0.apk || cp $(find . -name "*.apk" | head -n 1) outputs/FarmFinance-v1.0.apk
+
+      - name: Upload Standalone APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FarmFinance-Standalone-APK
+          path: android/outputs/FarmFinance-v1.0.apk
+          if-no-files-found: error
+          retention-days: 90`
   }
 ];
 

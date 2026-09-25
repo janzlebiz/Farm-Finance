@@ -21,6 +21,8 @@ import { BackupModal } from './components/BackupModal';
 import { AuditModal } from './components/AuditModal';
 import { ContactsModal } from './components/ContactsModal';
 import { AndroidSourceModal } from './components/AndroidSourceModal';
+import { InstallAppModal } from './components/InstallAppModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 // Icons
 import {
@@ -39,7 +41,9 @@ import {
   History,
   Maximize2,
   Minimize2,
-  FolderArchive
+  FolderArchive,
+  Smartphone,
+  Sparkles
 } from 'lucide-react';
 
 export default function App() {
@@ -67,6 +71,7 @@ export default function App() {
 
   // "More" drawers
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState<boolean>(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
   const [isAcceptanceTestsOpen, setIsAcceptanceTestsOpen] = useState<boolean>(false);
   const [isBackupOpen, setIsBackupOpen] = useState<boolean>(false);
   const [isAuditOpen, setIsAuditOpen] = useState<boolean>(false);
@@ -105,6 +110,15 @@ export default function App() {
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-800 text-emerald-100">Android v1.0</span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsInstallModalOpen(true)}
+            className="hover:text-emerald-300 font-semibold flex items-center gap-1 transition text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-800/80"
+            title="Install app to phone or Android device"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-emerald-300" />
+            Install on Phone
+          </button>
+          <span>•</span>
           <button
             onClick={() => setIsAndroidSourceOpen(true)}
             className="hover:text-emerald-400 font-semibold flex items-center gap-1 transition"
@@ -166,6 +180,14 @@ export default function App() {
 
           <div className="flex items-center gap-1.5">
             <button
+              onClick={() => setIsInstallModalOpen(true)}
+              className="p-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 flex items-center gap-1 text-[11px] font-bold transition border border-emerald-600/50"
+              title="Install on Phone (Android / iOS)"
+            >
+              <Smartphone className="w-4 h-4 text-emerald-300" />
+              <span>Install</span>
+            </button>
+            <button
               onClick={() => setIsAcceptanceTestsOpen(true)}
               className="p-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 flex items-center gap-1 text-[11px] font-bold transition"
               title="Run Real-World Acceptance Suite"
@@ -190,6 +212,7 @@ export default function App() {
               onOpenNewSale={() => setIsSaleModalOpen(true)}
               onOpenNewExpense={() => setIsExpenseModalOpen(true)}
               onNavigateToTab={(tab) => setActiveTab(tab)}
+              onOpenInstall={() => setIsInstallModalOpen(true)}
             />
           )}
 
@@ -365,6 +388,17 @@ export default function App() {
         <AndroidSourceModal onClose={() => setIsAndroidSourceOpen(false)} />
       )}
 
+      {/* Install on Phone Modal */}
+      {isInstallModalOpen && (
+        <InstallAppModal
+          onClose={() => setIsInstallModalOpen(false)}
+          onOpenAndroidSource={() => setIsAndroidSourceOpen(true)}
+        />
+      )}
+
+      {/* Offline Status Toast */}
+      <OfflineIndicator />
+
       {/* "More / Settings" Bottom Drawer */}
       {isMoreMenuOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4">
@@ -380,6 +414,20 @@ export default function App() {
             </div>
 
             <div className="space-y-1.5 text-xs">
+              <button
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  setIsInstallModalOpen(true);
+                }}
+                className="w-full text-left p-3 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 text-emerald-950 font-bold flex items-center justify-between transition border border-emerald-300"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Smartphone className="w-4 h-4 text-emerald-700" />
+                  <span>Install on Phone (Android / iOS / APK)</span>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-200 text-emerald-900 font-bold">Mobile App</span>
+              </button>
+
               <button
                 onClick={() => {
                   setIsMoreMenuOpen(false);
