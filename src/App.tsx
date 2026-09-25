@@ -23,6 +23,7 @@ import { ContactsModal } from './components/ContactsModal';
 import { AndroidSourceModal } from './components/AndroidSourceModal';
 import { InstallAppModal } from './components/InstallAppModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { OnboardingWizard } from './components/OnboardingWizard';
 
 // Icons
 import {
@@ -43,7 +44,9 @@ import {
   Minimize2,
   FolderArchive,
   Smartphone,
-  Sparkles
+  Sparkles,
+  CheckCircle2,
+  UserPlus
 } from 'lucide-react';
 
 export default function App() {
@@ -78,6 +81,21 @@ export default function App() {
   const [isContactsOpen, setIsContactsOpen] = useState<boolean>(false);
   const [isAndroidSourceOpen, setIsAndroidSourceOpen] = useState<boolean>(false);
 
+  // Onboarding state for new users
+  const [isOnboardingDismissed, setIsOnboardingDismissed] = useState<boolean>(() => {
+    return localStorage.getItem('farm_finance_onboarding_dismissed') === 'true';
+  });
+  const [isForcedOnboarding, setIsForcedOnboarding] = useState<boolean>(false);
+  const [welcomeToast, setWelcomeToast] = useState<string | null>(null);
+
+  // Auto-dismiss welcome toast after 6 seconds
+  useEffect(() => {
+    if (welcomeToast) {
+      const timer = setTimeout(() => setWelcomeToast(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [welcomeToast]);
+
   // Load database
   const reloadData = () => {
     const db = StorageService.loadDatabase();
@@ -90,11 +108,37 @@ export default function App() {
     setCycles([...db.cycles]);
     setHarvests([...db.harvests]);
     setAuditLogs([...db.auditLogs]);
+
+    if (db.buyers.length === 0 && db.suppliers.length === 0 && db.sales.length === 0 && db.expenses.length === 0) {
+      if (localStorage.getItem('farm_finance_onboarding_dismissed') !== 'true') {
+        setIsOnboardingDismissed(false);
+      }
+    }
   };
 
   useEffect(() => {
     reloadData();
   }, []);
+
+  // Empty data state detection: No buyers, suppliers, sales, or expenses recorded
+  const isDataEmpty = buyers.length === 0 && suppliers.length === 0 && sales.length === 0 && expenses.length === 0;
+  const showOnboarding = isForcedOnboarding || (isDataEmpty && !isOnboardingDismissed);
+
+  const handleOnboardingComplete = (createdName: string, type: 'buyer' | 'supplier') => {
+    localStorage.setItem('farm_finance_onboarding_dismissed', 'true');
+    setIsOnboardingDismissed(true);
+    setIsForcedOnboarding(false);
+    reloadData();
+    setActiveTab('dashboard');
+    setWelcomeToast(`Successfully added "${createdName}" as your first ${type === 'buyer' ? 'crop buyer' : 'farm supplier'}. Welcome to Farm Finance!`);
+  };
+
+  const handleOnboardingSkip = () => {
+    localStorage.setItem('farm_finance_onboarding_dismissed', 'true');
+    setIsOnboardingDismissed(true);
+    setIsForcedOnboarding(false);
+    setActiveTab('dashboard');
+  };
 
   const openPaymentForSale = (sale: Sale, remainingBalanceCentavos: number) => {
     setPaymentModalData({ sale, remainingBalanceCentavos });

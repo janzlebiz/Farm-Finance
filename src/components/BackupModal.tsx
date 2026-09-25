@@ -65,16 +65,31 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
     reader.readAsText(file);
   };
 
+  const handleResetClean = () => {
+    const confirmReset = window.confirm(
+      'Start fresh as a new user? This will remove all transactions, buyers, and expenses so you can use the app with your own real farm records.'
+    );
+    if (!confirmReset) return;
+
+    StorageService.resetToCleanState();
+    localStorage.removeItem('farm_finance_onboarding_dismissed');
+    setRestoreStatus({
+      success: true,
+      message: 'All records cleared. Database is now ready for a clean new user!'
+    });
+    onReload();
+  };
+
   const handleResetBaseline = () => {
     const confirmReset = window.confirm(
-      'Reset all data back to the Section 25 Acceptance Test Baseline? This resets Rice (1,000kg @ ₱32), Copra (850kg @ ₱42), payments (₱20k + ₱10k), and expense (₱350 incurred, ₱100 paid).'
+      'Load sample demo farm data? This populates sample Rice & Copra sales, expenses, and payments for testing.'
     );
     if (!confirmReset) return;
 
     StorageService.resetToDefaultAcceptanceData();
     setRestoreStatus({
       success: true,
-      message: 'Database reset to Section 25 Acceptance Baseline successfully.'
+      message: 'Sample demo data loaded successfully.'
     });
     onReload();
   };
@@ -176,14 +191,22 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
             </div>
           </div>
 
-          {/* Reset Baseline */}
-          <div className="pt-3 border-t border-slate-200">
+          {/* Database Reset & Demo Data */}
+          <div className="pt-3 border-t border-slate-200 space-y-2">
+            <button
+              onClick={handleResetClean}
+              className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-xl font-bold flex items-center justify-center gap-2 transition"
+            >
+              <RotateCcw className="w-4 h-4 text-rose-600" />
+              Clear All Data (Start Fresh for New User)
+            </button>
+
             <button
               onClick={handleResetBaseline}
-              className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"
+              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl font-semibold flex items-center justify-center gap-2 transition text-[11px]"
             >
-              <RotateCcw className="w-4 h-4" />
-              Reset to Section 25 Acceptance Baseline
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+              Load Sample Demo Farm Data (Rice & Copra)
             </button>
           </div>
 

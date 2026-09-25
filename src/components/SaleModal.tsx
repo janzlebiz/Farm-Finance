@@ -19,16 +19,16 @@ export const SaleModal: React.FC<SaleModalProps> = ({
 }) => {
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [crop, setCrop] = useState<string>('Rice');
-  const [quantityStr, setQuantityStr] = useState<string>('1000');
+  const [quantityStr, setQuantityStr] = useState<string>('');
   const [unit, setUnit] = useState<string>('kg');
-  const [unitPriceStr, setUnitPriceStr] = useState<string>('32');
+  const [unitPriceStr, setUnitPriceStr] = useState<string>('');
   const [buyerId, setBuyerId] = useState<string>(buyers[0]?.id || '');
   const [cycleId, setCycleId] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
-  // New Buyer inline state
-  const [isAddingBuyer, setIsAddingBuyer] = useState<boolean>(false);
+  // New Buyer inline state (auto open if no buyers saved yet)
+  const [isAddingBuyer, setIsAddingBuyer] = useState<boolean>(buyers.length === 0);
   const [newBuyerName, setNewBuyerName] = useState<string>('');
   const [newBuyerContact, setNewBuyerContact] = useState<string>('');
 

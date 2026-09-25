@@ -47,9 +47,9 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   // New Harvest form state
   const [harvestCycleId, setHarvestCycleId] = useState<string>(cycles[0]?.id || '');
   const [harvestCrop, setHarvestCrop] = useState<string>('Rice');
-  const [harvestQuantity, setHarvestQuantity] = useState<string>('1000');
+  const [harvestQuantity, setHarvestQuantity] = useState<string>('');
   const [harvestUnit, setHarvestUnit] = useState<string>('kg');
-  const [harvestGrade, setHarvestGrade] = useState<string>('Grade 1 Standard');
+  const [harvestGrade, setHarvestGrade] = useState<string>('');
   const [harvestDate, setHarvestDate] = useState<string>(DateUtils.getTodayString());
 
   const handleCreateCycle = (e: React.FormEvent) => {

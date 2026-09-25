@@ -119,6 +119,35 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         </div>
       </div>
 
+      {/* New User Welcome Card (Shown when account has 0 records) */}
+      {metrics.salesCount === 0 && metrics.expensesCount === 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl">🌱</span>
+            <div>
+              <h4 className="font-bold text-sm text-emerald-950">Welcome to Farm Finance!</h4>
+              <p className="text-xs text-emerald-700">Your account is clean and ready. Tap below to record your first transaction.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+            <button
+              onClick={onOpenNewSale}
+              className="py-2.5 px-3 bg-emerald-800 hover:bg-emerald-900 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition"
+            >
+              <PlusCircle className="w-4 h-4" />
+              Record First Sale
+            </button>
+            <button
+              onClick={onOpenNewExpense}
+              className="py-2.5 px-3 bg-amber-800 hover:bg-amber-900 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition"
+            >
+              <Receipt className="w-4 h-4" />
+              Record First Expense
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Cash Flow vs Receivables Grid */}
       <div className="grid grid-cols-2 gap-3">
         {/* Cash Received */}

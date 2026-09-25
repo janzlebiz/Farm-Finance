@@ -49,10 +49,41 @@ interface AppDatabase {
   auditLogs: AuditLog[];
 }
 
-const STORAGE_KEY = 'farm_finance_db_v2';
+const STORAGE_KEY = 'farm_finance_db_v3';
 
 export const StorageService = {
   getInitialData(): AppDatabase {
+    const categories: ExpenseCategory[] = DEFAULT_CATEGORIES.map((cat, idx) => ({
+      id: `cat-${idx + 1}`,
+      name: cat,
+      isDefault: true
+    }));
+
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      categories,
+      buyers: [],
+      suppliers: [],
+      cycles: [],
+      sales: [],
+      payments: [],
+      expenses: [],
+      harvests: [],
+      auditLogs: [
+        {
+          id: 'audit-init',
+          timestamp: new Date().toISOString(),
+          entityType: 'BACKUP',
+          entityId: 'SYSTEM',
+          eventType: 'CREATE',
+          summary: 'New farm financial database initialized for user',
+          appVersion: APP_VERSION
+        }
+      ]
+    };
+  },
+
+  getSampleAcceptanceData(): AppDatabase {
     const today = DateUtils.getTodayString();
     const categories: ExpenseCategory[] = DEFAULT_CATEGORIES.map((cat, idx) => ({
       id: `cat-${idx + 1}`,
@@ -246,7 +277,7 @@ export const StorageService = {
       ],
       auditLogs: [
         {
-          id: 'audit-init',
+          id: 'audit-init-sample',
           timestamp: new Date().toISOString(),
           entityType: 'BACKUP',
           entityId: 'SYSTEM',
@@ -813,8 +844,13 @@ export const StorageService = {
   },
 
   resetToDefaultAcceptanceData(): void {
-    const initial = this.getInitialData();
-    this.saveDatabase(initial);
+    const sample = this.getSampleAcceptanceData();
+    this.saveDatabase(sample);
+  },
+
+  resetToCleanState(): void {
+    const clean = this.getInitialData();
+    this.saveDatabase(clean);
   },
 
   calculateSimpleHash(str: string): string {
