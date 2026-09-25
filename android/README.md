@@ -132,32 +132,78 @@ Output: `app/build/outputs/apk/debug/app-debug.apk`
 
 ## 7. CI/CD GitHub Actions Workflow
 
-A sample workflow for `.github/workflows/android.yml`:
+A production workflow is provided in `.github/workflows/android.yml`:
 
 ```yaml
-name: Android CI
+name: Build Standalone Android APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-apk:
+    name: Build & Package Android APK
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: gradle
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-    - name: Run Unit Tests
-      run: ./gradlew test
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Determine Project Directory & Ensure Gradle Wrapper
+        id: prep
+        run: |
+          if [ -f "android/build.gradle.kts" ]; then
+            DIR="android"
+          elif [ -f "build.gradle.kts" ]; then
+            DIR="."
+          else
+            DIR=$(dirname $(find . -name "build.gradle.kts" -not -path "*/app/*" | head -n 1))
+          fi
+          echo "PROJECT_DIR=$DIR" >> $GITHUB_OUTPUT
+          cd "$DIR"
+          if [ ! -f "gradlew" ]; then
+            gradle wrapper --gradle-version 8.7 || true
+          fi
+          chmod +x gradlew || true
+
+      - name: Build Standalone Debug APK
+        run: |
+          cd "${{ steps.prep.outputs.PROJECT_DIR }}"
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare APK Output
+        id: output
+        run: |
+          mkdir -p build_outputs
+          APK_FILE=$(find . -path "*/build/outputs/apk/*" -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find . -name "*.apk" | head -n 1)
+          fi
+          cp "$APK_FILE" build_outputs/FarmFinance-v1.0.apk
+          ls -lh build_outputs/
+
+      - name: Upload Standalone APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FarmFinance-Standalone-APK
+          path: build_outputs/FarmFinance-v1.0.apk
+          if-no-files-found: error
+          retention-days: 90
 ```

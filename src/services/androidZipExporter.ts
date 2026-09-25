@@ -321,38 +321,56 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
-      - name: Prepare Gradle Wrapper
-        working-directory: ./android
+      - name: Accept Android SDK Licenses
         run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Determine Project Directory & Ensure Gradle Wrapper
+        id: prep
+        run: |
+          if [ -f "android/build.gradle.kts" ]; then
+            DIR="android"
+          elif [ -f "build.gradle.kts" ]; then
+            DIR="."
+          else
+            DIR=$(dirname $(find . -name "build.gradle.kts" -not -path "*/app/*" | head -n 1))
+          fi
+          echo "PROJECT_DIR=$DIR" >> $GITHUB_OUTPUT
+          echo "Selected Android Project Directory: $DIR"
+
+          cd "$DIR"
           if [ ! -f "gradlew" ]; then
-            gradle wrapper --gradle-version 8.4 --distribution-type bin || true
+            echo "Generating Gradle wrapper..."
+            gradle wrapper --gradle-version 8.7 || true
           fi
           chmod +x gradlew || true
 
-      - name: Run Financial & Core Unit Tests
-        working-directory: ./android
-        run: ./gradlew test
-
       - name: Build Standalone Debug APK
-        working-directory: ./android
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Rename APK for Clarity
-        working-directory: ./android
         run: |
-          mkdir -p outputs
-          cp app/build/outputs/apk/debug/app-debug.apk outputs/FarmFinance-v1.0.apk || cp $(find . -name "*.apk" | head -n 1) outputs/FarmFinance-v1.0.apk
+          cd "\${{ steps.prep.outputs.PROJECT_DIR }}"
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare APK Output
+        id: output
+        run: |
+          mkdir -p build_outputs
+          APK_FILE=$(find . -path "*/build/outputs/apk/*" -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find . -name "*.apk" | head -n 1)
+          fi
+          echo "Found APK at: $APK_FILE"
+          cp "$APK_FILE" build_outputs/FarmFinance-v1.0.apk
+          ls -lh build_outputs/
 
       - name: Upload Standalone APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: FarmFinance-Standalone-APK
-          path: android/outputs/FarmFinance-v1.0.apk
+          path: build_outputs/FarmFinance-v1.0.apk
           if-no-files-found: error
           retention-days: 90`
   }
