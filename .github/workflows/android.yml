@@ -91,10 +91,10 @@ jobs:
           fi
           chmod +x gradlew || true
 
-      - name: Build Standalone Debug APK
+      - name: Build Standalone Release APK
         run: |
           cd "${{ steps.prep.outputs.PROJECT_DIR }}"
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Prepare APK Output
         id: output

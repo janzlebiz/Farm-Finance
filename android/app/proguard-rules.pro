@@ -10,3 +10,10 @@
 
 # Keep Keystore & Security Crypto classes
 -keep class androidx.security.crypto.** { *; }
+
+# Keep JavaScript Interface for WebView Bridge
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keep class com.farmfinance.app.bridge.** { *; }
+

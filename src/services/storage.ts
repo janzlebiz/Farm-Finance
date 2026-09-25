@@ -17,7 +17,7 @@ import {
 import { MoneyUtils } from '../utils/money';
 import { DateUtils } from '../utils/date';
 import { FinancialCalculator } from '../utils/financialCalculator';
-import { computeSha256Sync } from '../utils/crypto';
+import { computeSha256Sync, canonicalJsonStringify } from '../utils/crypto';
 
 export const APP_VERSION = '1.0.0';
 export const DATABASE_SCHEMA_VERSION = 3;
@@ -491,6 +491,25 @@ export const StorageService = {
     };
 
     db.expenses.unshift(newExpense);
+
+    // Initial expense payment tracking
+    if (data.amountPaidCentavos > 0) {
+      if (!db.expensePayments) db.expensePayments = [];
+      const initPayment: ExpensePayment = {
+        id: `exp-pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        expenseId: newExpense.id,
+        supplierId: data.supplierId,
+        date: data.date,
+        amountCentavos: data.amountPaidCentavos,
+        paymentMethod: data.paymentMethod || 'CASH',
+        reference: data.reference,
+        notes: data.notes,
+        isVoided: false,
+        createdAt: now
+      };
+      db.expensePayments.unshift(initPayment);
+    }
+
     const unpaid = newExpense.amountIncurredCentavos - newExpense.amountPaidCentavos;
     this.addAuditLog(
       db,
@@ -503,6 +522,116 @@ export const StorageService = {
 
     this.saveMemoryDatabase(db);
     return { expense: newExpense };
+  },
+
+  recordExpensePayment(params: {
+    expenseId: string;
+    amountCentavos: number;
+    date: string;
+    paymentMethod: PaymentMethod;
+    reference?: string;
+    notes?: string;
+  }): { payment?: ExpensePayment; error?: string } {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.recordExpensePayment(JSON.stringify(params));
+        const res = JSON.parse(resStr);
+        if (!res.success) return { error: res.error || 'Failed to record expense payment' };
+        const db = this.loadDatabase();
+        const created = (db.expensePayments || []).find((p) => p.id === res.paymentId);
+        return { payment: created };
+      } catch (e: any) {
+        return { error: e?.message || 'Native expense payment recording error' };
+      }
+    }
+
+    const db = this.loadDatabase();
+    const expense = db.expenses.find((e) => e.id === params.expenseId);
+    if (!expense) return { error: 'Expense record not found.' };
+    if (expense.isVoided) return { error: 'Cannot record payment on a voided expense.' };
+    if (params.amountCentavos <= 0) return { error: 'Payment amount must be greater than ₱0.00.' };
+
+    if (!db.expensePayments) db.expensePayments = [];
+    const validPayments = db.expensePayments.filter((p) => p.expenseId === params.expenseId && !p.isVoided);
+    const currentPaid = validPayments.reduce((acc, p) => acc + p.amountCentavos, 0);
+    const remaining = expense.amountIncurredCentavos - currentPaid;
+
+    if (params.amountCentavos > remaining) {
+      return {
+        error: `Payment of ${MoneyUtils.formatPesos(params.amountCentavos)} exceeds remaining expense balance of ${MoneyUtils.formatPesos(remaining)}.`
+      };
+    }
+
+    const now = new Date().toISOString();
+    const newPayment: ExpensePayment = {
+      id: `exp-pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      expenseId: params.expenseId,
+      supplierId: expense.supplierId,
+      date: params.date,
+      amountCentavos: params.amountCentavos,
+      paymentMethod: params.paymentMethod,
+      reference: params.reference?.trim() || undefined,
+      notes: params.notes?.trim() || undefined,
+      isVoided: false,
+      createdAt: now
+    };
+
+    db.expensePayments.unshift(newPayment);
+    // Invariant: amountPaidCentavos == SUM(valid expense payments)
+    expense.amountPaidCentavos = currentPaid + params.amountCentavos;
+    expense.updatedAt = now;
+
+    this.addAuditLog(
+      db,
+      'EXPENSE',
+      newPayment.id,
+      'CREATE',
+      `Recorded expense payment of ${MoneyUtils.formatPesos(params.amountCentavos)} for expense ${expense.id}`,
+      { expenseId: expense.id, amount: params.amountCentavos }
+    );
+
+    this.saveMemoryDatabase(db);
+    return { payment: newPayment };
+  },
+
+  voidExpensePayment(paymentId: string, reason: string): { success: boolean; error?: string } {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.voidExpensePayment(paymentId, reason);
+        const res = JSON.parse(resStr);
+        return res.success ? { success: true } : { success: false, error: res.error };
+      } catch (e: any) {
+        return { success: false, error: e?.message };
+      }
+    }
+
+    const db = this.loadDatabase();
+    if (!db.expensePayments) db.expensePayments = [];
+    const payment = db.expensePayments.find((p) => p.id === paymentId);
+    if (!payment) return { success: false, error: 'Expense payment not found.' };
+    if (payment.isVoided) return { success: false, error: 'Expense payment is already voided.' };
+
+    const expense = db.expenses.find((e) => e.id === payment.expenseId);
+    payment.isVoided = true;
+
+    if (expense) {
+      const validPayments = db.expensePayments.filter((p) => p.expenseId === expense.id && !p.isVoided);
+      expense.amountPaidCentavos = validPayments.reduce((acc, p) => acc + p.amountCentavos, 0);
+      expense.updatedAt = new Date().toISOString();
+    }
+
+    this.addAuditLog(
+      db,
+      'EXPENSE',
+      payment.id,
+      'VOID',
+      `Voided expense payment ${payment.id} of ${MoneyUtils.formatPesos(payment.amountCentavos)}. Reason: ${reason || 'User voided'}.`
+    );
+
+    this.saveMemoryDatabase(db);
+    return { success: true };
   },
 
   voidExpense(expenseId: string, reason: string): { success: boolean; error?: string } {
@@ -524,6 +653,14 @@ export const StorageService = {
 
     expense.isVoided = true;
     expense.updatedAt = new Date().toISOString();
+
+    // Cascaded voiding of all associated expense payments
+    if (db.expensePayments) {
+      const childPayments = db.expensePayments.filter((p) => p.expenseId === expenseId && !p.isVoided);
+      for (const p of childPayments) {
+        p.isVoided = true;
+      }
+    }
 
     this.addAuditLog(
       db,
@@ -724,7 +861,7 @@ export const StorageService = {
     this.addAuditLog(db, 'BACKUP', 'EXPORT', 'BACKUP_EXPORT', 'Cryptographic SHA-256 backup exported');
     this.saveMemoryDatabase(db);
 
-    const serializedDb = JSON.stringify(db);
+    const serializedDb = canonicalJsonStringify(db);
     const sha256Hex = computeSha256Sync(serializedDb);
     const nowIso = new Date().toISOString();
 
@@ -785,7 +922,7 @@ export const StorageService = {
       }
 
       const dbPayload: AppDatabase = parsed.database;
-      const computedHash = computeSha256Sync(JSON.stringify(dbPayload));
+      const computedHash = computeSha256Sync(canonicalJsonStringify(dbPayload));
 
       if (computedHash.toLowerCase() !== parsed.integrity.checksum.toLowerCase()) {
         return {

@@ -15,6 +15,29 @@ export async function computeSha256(text: string): Promise<string> {
   return fallbackSha256(text);
 }
 
+/**
+ * Deterministically stringifies any object or array by recursively sorting object keys.
+ * This guarantees canonical byte representation for cryptographic hashing.
+ */
+export function canonicalJsonStringify(obj: any): string {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(canonicalJsonStringify).join(',') + ']';
+  }
+
+  const sortedKeys = Object.keys(obj).sort();
+  const entries: string[] = [];
+  for (const key of sortedKeys) {
+    if (obj[key] !== undefined) {
+      entries.push(`${JSON.stringify(key)}:${canonicalJsonStringify(obj[key])}`);
+    }
+  }
+  return '{' + entries.join(',') + '}';
+}
+
 // Synchronous SHA-256 implementation
 export function computeSha256Sync(text: string): string {
   return fallbackSha256(text);

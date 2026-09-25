@@ -1,7 +1,7 @@
 import { StorageService, AppDatabase, BACKUP_SCHEMA_VERSION } from '../services/storage';
 import { FinancialCalculator } from '../utils/financialCalculator';
 import { MoneyUtils } from '../utils/money';
-import { computeSha256Sync } from '../utils/crypto';
+import { computeSha256Sync, canonicalJsonStringify } from '../utils/crypto';
 
 export interface TestResult {
   suite: string;
@@ -409,7 +409,7 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       ];
 
       // Recompute hash so failure is specifically triggered by foreign key validator
-      parsed.integrity.checksum = computeSha256Sync(JSON.stringify(parsed.database));
+      parsed.integrity.checksum = computeSha256Sync(canonicalJsonStringify(parsed.database));
 
       const restoreRes = StorageService.validateAndRestoreBackup(JSON.stringify(parsed));
       assert(!restoreRes.success, 'Restore must reject dangling buyer');
@@ -425,7 +425,7 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
         { id: 'buyer-dup', name: 'Buyer 1', contactNumber: '', address: '', notes: '', createdDate: '2026-10-15', status: 'ACTIVE' },
         { id: 'buyer-dup', name: 'Buyer 2', contactNumber: '', address: '', notes: '', createdDate: '2026-10-15', status: 'ACTIVE' }
       ];
-      parsed.integrity.checksum = computeSha256Sync(JSON.stringify(parsed.database));
+      parsed.integrity.checksum = computeSha256Sync(canonicalJsonStringify(parsed.database));
 
       const restoreRes = StorageService.validateAndRestoreBackup(JSON.stringify(parsed));
       assert(!restoreRes.success, 'Restore must reject duplicate IDs');
@@ -483,7 +483,7 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
         exportedAt: new Date().toISOString(),
         integrity: {
           algorithm: 'SHA-256' as const,
-          checksum: computeSha256Sync(JSON.stringify(legacyPayload))
+          checksum: computeSha256Sync(canonicalJsonStringify(legacyPayload))
         },
         database: legacyPayload
       };
@@ -495,6 +495,261 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(db.sales.length === 1, 'Migrated sales count must be 1');
       assert(db.payments.length === 1, 'Migrated payments count must be 1');
       assert(db.buyers.length === 1, 'Migrated buyers count must be 1');
+    });
+
+    // ----------------------------------------------------
+    // SUITE 4: EXPENSE PAYMENT INVARIANTS (PHASE 2)
+    // ----------------------------------------------------
+    await executeTest('Expense Invariants', 'Invariant: amountPaidCentavos == SUM(valid expense payments)', () => {
+      StorageService.resetToCleanState();
+      const supplier = StorageService.createSupplier({ name: 'AgriSupply Inc', contactNumber: '', address: '', notes: '', status: 'ACTIVE' });
+
+      const expRes = StorageService.createExpense({
+        category: 'Fertilizer',
+        amountIncurredCentavos: 1000000, // ₱10,000.00
+        amountPaidCentavos: 0,
+        date: '2026-10-15',
+        description: '10 bags Urea fertilizer',
+        crop: 'Rice',
+        supplierId: supplier.id
+      });
+      assert(!!expRes.expense, 'Expense creation should succeed');
+      const expense = expRes.expense!;
+      assert(expense.amountPaidCentavos === 0, 'Initial expense paid centavos must be 0');
+
+      // 1. Partial payment 1
+      const pay1 = StorageService.recordExpensePayment({
+        expenseId: expense.id,
+        amountCentavos: 350000, // ₱3,500.00
+        date: '2026-10-15',
+        paymentMethod: 'CASH'
+      });
+      assert(!!pay1.payment, 'Payment 1 should succeed');
+      let db = StorageService.loadDatabase();
+      let reloadedExp = db.expenses.find((e) => e.id === expense.id)!;
+      let validPayments = (db.expensePayments || []).filter((p) => p.expenseId === expense.id && !p.isVoided);
+      let sumPaid = validPayments.reduce((s, p) => s + p.amountCentavos, 0);
+      assert(reloadedExp.amountPaidCentavos === 350000, 'Expense amountPaidCentavos must be 350000');
+      assert(reloadedExp.amountPaidCentavos === sumPaid, 'INVARIANT: amountPaidCentavos == SUM(valid expense payments)');
+
+      // 2. Partial payment 2
+      const pay2 = StorageService.recordExpensePayment({
+        expenseId: expense.id,
+        amountCentavos: 650000, // ₱6,500.00 (settles balance)
+        date: '2026-10-16',
+        paymentMethod: 'BANK_TRANSFER'
+      });
+      assert(!!pay2.payment, 'Payment 2 should succeed');
+      db = StorageService.loadDatabase();
+      reloadedExp = db.expenses.find((e) => e.id === expense.id)!;
+      validPayments = (db.expensePayments || []).filter((p) => p.expenseId === expense.id && !p.isVoided);
+      sumPaid = validPayments.reduce((s, p) => s + p.amountCentavos, 0);
+      assert(reloadedExp.amountPaidCentavos === 1000000, 'Expense amountPaidCentavos must be 1000000');
+      assert(reloadedExp.amountPaidCentavos === sumPaid, 'INVARIANT: amountPaidCentavos == SUM(valid expense payments)');
+
+      // 3. Reject Overpayment
+      const overPay = StorageService.recordExpensePayment({
+        expenseId: expense.id,
+        amountCentavos: 100, // ₱1.00 over
+        date: '2026-10-17',
+        paymentMethod: 'CASH'
+      });
+      assert(!!overPay.error, 'Overpayment must be rejected');
+      db = StorageService.loadDatabase();
+      reloadedExp = db.expenses.find((e) => e.id === expense.id)!;
+      assert(reloadedExp.amountPaidCentavos === 1000000, 'Balance must remain 1000000 after rejected overpayment');
+
+      // 4. Void Payment 2 and verify invariant holds
+      const voidRes = StorageService.voidExpensePayment(pay2.payment!.id, 'Issued refund');
+      assert(voidRes.success, 'Void expense payment must succeed');
+      db = StorageService.loadDatabase();
+      reloadedExp = db.expenses.find((e) => e.id === expense.id)!;
+      validPayments = (db.expensePayments || []).filter((p) => p.expenseId === expense.id && !p.isVoided);
+      sumPaid = validPayments.reduce((s, p) => s + p.amountCentavos, 0);
+      assert(validPayments.length === 1, 'Only 1 valid payment should remain');
+      assert(reloadedExp.amountPaidCentavos === 350000, 'amountPaidCentavos must revert to 350000');
+      assert(reloadedExp.amountPaidCentavos === sumPaid, 'INVARIANT PROVEN: amountPaidCentavos == SUM(valid payments)');
+
+      // 5. Void parent expense -> cascade void child payments
+      const voidExpRes = StorageService.voidExpense(expense.id, 'Cancelled transaction');
+      assert(voidExpRes.success, 'Void expense must succeed');
+      db = StorageService.loadDatabase();
+      reloadedExp = db.expenses.find((e) => e.id === expense.id)!;
+      assert(reloadedExp.isVoided === true, 'Expense must be voided');
+      const allChildPayments = (db.expensePayments || []).filter((p) => p.expenseId === expense.id);
+      assert(allChildPayments.every((p) => p.isVoided), 'All child expense payments must be cascade voided');
+    });
+
+    // ----------------------------------------------------
+    // SUITE 5: BACKUP CANONICALIZATION & SENSITIVITY (PHASE 2)
+    // ----------------------------------------------------
+    await executeTest('Backup Canonicalization', 'Deterministic Hashing & Mutation Sensitivity', () => {
+      StorageService.resetToCleanState();
+      StorageService.createBuyer({ name: 'Canonical Buyer', contactNumber: '09123456789', address: 'Farm Road', notes: '', status: 'ACTIVE' });
+
+      const backupJson1 = StorageService.exportBackupJson();
+      const parsed1 = JSON.parse(backupJson1);
+      const hash1 = parsed1.integrity.checksum;
+      assert(!!hash1, 'Checksum must exist');
+
+      // 1. Identical DB -> Identical Checksum
+      const hashRecomputed = computeSha256Sync(canonicalJsonStringify(parsed1.database));
+      assert(hashRecomputed.toLowerCase() === hash1.toLowerCase(), 'Identical database must produce identical checksum');
+
+      // 2. One field changed -> Checksum changes
+      const dbMutatedField = JSON.parse(JSON.stringify(parsed1.database));
+      dbMutatedField.buyers[0].contactNumber = '09999999999';
+      const hashFieldMutated = computeSha256Sync(canonicalJsonStringify(dbMutatedField));
+      assert(hashFieldMutated !== hash1, 'Changing one field must change SHA-256 checksum');
+
+      // 3. One record added -> Checksum changes
+      const dbRecordAdded = JSON.parse(JSON.stringify(parsed1.database));
+      dbRecordAdded.buyers.push({ id: 'buyer-added', name: 'New Buyer', contactNumber: '', address: '', notes: '', createdDate: '2026-10-15', status: 'ACTIVE' });
+      const hashRecordAdded = computeSha256Sync(canonicalJsonStringify(dbRecordAdded));
+      assert(hashRecordAdded !== hash1, 'Adding one record must change SHA-256 checksum');
+
+      // 4. One record deleted -> Checksum changes
+      const dbRecordDeleted = JSON.parse(JSON.stringify(parsed1.database));
+      dbRecordDeleted.buyers = [];
+      const hashRecordDeleted = computeSha256Sync(canonicalJsonStringify(dbRecordDeleted));
+      assert(hashRecordDeleted !== hash1, 'Deleting one record must change SHA-256 checksum');
+    });
+
+    // ----------------------------------------------------
+    // SUITE 6: RESTORE ATOMICITY & ROLLBACK (PHASE 2)
+    // ----------------------------------------------------
+    await executeTest('Restore Atomicity', 'Malformed Restore Fails & Leaves Active DB 100% Pristine', () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({ name: 'Pristine Buyer', contactNumber: '09170000000', address: 'Sector 4', notes: 'Untouchable', status: 'ACTIVE' });
+      const saleRes = StorageService.createSale({
+        crop: 'Rice',
+        quantity: 100,
+        unit: 'kg',
+        unitPriceCentavos: 3500,
+        buyerId: buyer.id,
+        date: '2026-10-15'
+      });
+      assert(!!saleRes.sale, 'Sale creation should succeed');
+      const sale = saleRes.sale!;
+      const originalDb = StorageService.loadDatabase();
+      const originalCountBuyers = originalDb.buyers.length;
+      const originalCountSales = originalDb.sales.length;
+      const originalGross = originalDb.sales[0].grossAmountCentavos;
+
+      // Malformed test 1: Invalid JSON syntax
+      const res1 = StorageService.validateAndRestoreBackup('{ broken json }');
+      assert(!res1.success, 'Broken JSON must fail');
+
+      // Malformed test 2: Checksum mismatch (tampered payload)
+      const validBackup = StorageService.exportBackupJson();
+      const parsed = JSON.parse(validBackup);
+      parsed.database.sales[0].grossAmountCentavos = 9999999; // Tamper
+      const res2 = StorageService.validateAndRestoreBackup(JSON.stringify(parsed));
+      assert(!res2.success, 'Tampered backup must fail checksum validation');
+
+      // Malformed test 3: Dangling foreign key
+      parsed.database.sales[0].buyerId = 'dangling-buyer-xyz';
+      parsed.integrity.checksum = computeSha256Sync(canonicalJsonStringify(parsed.database));
+      const res3 = StorageService.validateAndRestoreBackup(JSON.stringify(parsed));
+      assert(!res3.success, 'Dangling foreign key must fail restore validation');
+
+      // Malformed test 4: Overpayment in backup payload
+      parsed.database.sales[0].buyerId = buyer.id;
+      parsed.database.payments = [
+        {
+          id: 'pay-over',
+          saleId: sale.id,
+          buyerId: buyer.id,
+          date: '2026-10-15',
+          amountCentavos: sale.grossAmountCentavos * 2, // 200% overpayment
+          paymentMethod: 'CASH',
+          isVoided: false,
+          createdAt: new Date().toISOString()
+        }
+      ];
+      parsed.integrity.checksum = computeSha256Sync(canonicalJsonStringify(parsed.database));
+      const res4 = StorageService.validateAndRestoreBackup(JSON.stringify(parsed));
+      assert(!res4.success, 'Overpayment in backup must be rejected');
+
+      // CRITICAL VERIFICATION: Active DB remains 100% unmodified!
+      const currentDb = StorageService.loadDatabase();
+      assert(currentDb.buyers.length === originalCountBuyers, 'Buyer count must be unchanged');
+      assert(currentDb.sales.length === originalCountSales, 'Sale count must be unchanged');
+      assert(currentDb.sales[0].grossAmountCentavos === originalGross, 'Financial balance must remain unchanged');
+      assert(currentDb.buyers[0].name === 'Pristine Buyer', 'Record contents must remain intact');
+    });
+
+    // ----------------------------------------------------
+    // SUITE 7: MIGRATION IDEMPOTENCY & INTERRUPTION RECOVERY (PHASE 2)
+    // ----------------------------------------------------
+    await executeTest('Migration Idempotency', 'Migration Resumes Safely Without Corrupting Balances or Duplicating Records', () => {
+      StorageService.resetToCleanState();
+      const legacyData = {
+        schemaVersion: 2,
+        buyers: [
+          { id: 'b-idempotent-1', name: 'Idempotent Rice Miller', contactNumber: '0912', address: 'Town', notes: '', createdDate: '2026-09-01', status: 'ACTIVE' }
+        ],
+        suppliers: [],
+        cycles: [],
+        sales: [
+          {
+            id: 's-idempotent-1',
+            date: '2026-09-01',
+            crop: 'Rice',
+            quantity: 200,
+            unit: 'kg',
+            unitPriceCentavos: 3500,
+            grossAmountCentavos: 700000,
+            buyerId: 'b-idempotent-1',
+            buyerNameSnapshot: 'Idempotent Rice Miller',
+            isVoided: false,
+            createdAt: '2026-09-01T00:00:00Z',
+            updatedAt: '2026-09-01T00:00:00Z'
+          }
+        ],
+        payments: [
+          {
+            id: 'p-idempotent-1',
+            saleId: 's-idempotent-1',
+            buyerId: 'b-idempotent-1',
+            date: '2026-09-01',
+            amountCentavos: 700000,
+            paymentMethod: 'CASH',
+            isVoided: false,
+            createdAt: '2026-09-01T00:00:00Z'
+          }
+        ],
+        expenses: []
+      };
+
+      const wrapBackup = (data: any) =>
+        JSON.stringify({
+          appName: 'Farm Finance',
+          appVersion: '1.0.0',
+          backupSchemaVersion: 1,
+          exportedAt: new Date().toISOString(),
+          integrity: {
+            algorithm: 'SHA-256' as const,
+            checksum: computeSha256Sync(canonicalJsonStringify(data))
+          },
+          database: data
+        });
+
+      // 1. Initial Migration run
+      const res1 = StorageService.validateAndRestoreBackup(wrapBackup(legacyData));
+      assert(res1.success, 'Initial migration restore must succeed');
+      let db = StorageService.loadDatabase();
+      assert(db.sales.length === 1, 'Exactly 1 sale migrated');
+      assert(db.payments.length === 1, 'Exactly 1 payment migrated');
+      assert(db.sales[0].grossAmountCentavos === 700000, 'Sale gross must be 700,000 centavos');
+
+      // 2. Second Migration run (Idempotency check)
+      const res2 = StorageService.validateAndRestoreBackup(wrapBackup(legacyData));
+      assert(res2.success, 'Second migration run must succeed idempotently');
+      db = StorageService.loadDatabase();
+      assert(db.sales.length === 1, 'Sale count must remain 1 (no duplicates)');
+      assert(db.payments.length === 1, 'Payment count must remain 1 (no duplicates)');
+      assert(db.sales[0].grossAmountCentavos === 700000, 'Balance must remain unchanged');
     });
 
   } finally {

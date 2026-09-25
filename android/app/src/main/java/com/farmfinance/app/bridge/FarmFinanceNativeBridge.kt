@@ -406,6 +406,67 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
+    fun recordExpensePayment(jsonStr: String): String = runBlocking {
+        try {
+            val json = JSONObject(jsonStr)
+            val expenseId = json.getString("expenseId")
+            val amountCentavos = json.getLong("amountCentavos")
+            val date = json.getString("date")
+            val methodStr = json.optString("paymentMethod", "CASH")
+            val method = try { PaymentMethod.valueOf(methodStr) } catch (_: Exception) { PaymentMethod.CASH }
+            val reference = json.optString("reference", "")
+            val notes = json.optString("notes", "")
+
+            val result = repository.recordExpensePayment(
+                expenseId = expenseId,
+                amount = Money(amountCentavos),
+                date = date,
+                method = method,
+                reference = reference,
+                notes = notes
+            )
+
+            if (result.isSuccess) {
+                val ep = result.getOrThrow()
+                JSONObject().apply {
+                    put("success", true)
+                    put("paymentId", ep.id)
+                }.toString()
+            } else {
+                JSONObject().apply {
+                    put("success", false)
+                    put("error", result.exceptionOrNull()?.message ?: "Expense payment recording failed")
+                }.toString()
+            }
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Invalid expense payment payload")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun voidExpensePayment(paymentId: String, reason: String): String = runBlocking {
+        try {
+            val result = repository.voidExpensePayment(paymentId, reason)
+            if (result.isSuccess) {
+                JSONObject().apply { put("success", true) }.toString()
+            } else {
+                JSONObject().apply {
+                    put("success", false)
+                    put("error", result.exceptionOrNull()?.message ?: "Failed to void expense payment")
+                }.toString()
+            }
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Error voiding expense payment")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
     fun createBuyer(jsonStr: String): String = runBlocking {
         try {
             val json = JSONObject(jsonStr)

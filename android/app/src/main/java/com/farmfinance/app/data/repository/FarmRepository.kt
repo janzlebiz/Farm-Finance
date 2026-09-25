@@ -188,23 +188,147 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             updatedAt = now
         )
 
-        db.expenseDao().insertExpense(entity)
-
-        // Audit Log
-        db.auditLogDao().insertAuditLog(
-            AuditLogEntity(
-                id = "audit_${UUID.randomUUID()}",
-                timestamp = now,
-                entityType = "EXPENSE",
-                entityId = expenseId,
-                eventType = "CREATE",
-                summary = "Recorded expense of ${incurred.format()} ($category)",
-                metadataJson = "{\"incurred\": ${incurred.centavos}, \"paid\": ${paid.centavos}}",
-                appVersion = "1.0.0"
-            )
-        )
+        // Transactional insert of expense and initial payment record if paid > 0
+        db.runInTransaction {
+            kotlinx.coroutines.runBlocking {
+                db.expenseDao().insertExpense(entity)
+                if (paid.centavos > 0L) {
+                    val initialPayment = ExpensePaymentEntity(
+                        id = "exp_pay_${UUID.randomUUID()}",
+                        expenseId = expenseId,
+                        supplierId = supplierId,
+                        date = date,
+                        amountCentavos = paid.centavos,
+                        paymentMethod = method.name,
+                        reference = reference,
+                        notes = "Initial expense payment on creation",
+                        isVoided = false,
+                        createdAt = now
+                    )
+                    db.expensePaymentDao().insertExpensePayment(initialPayment)
+                }
+                // Audit Log
+                db.auditLogDao().insertAuditLog(
+                    AuditLogEntity(
+                        id = "audit_${UUID.randomUUID()}",
+                        timestamp = now,
+                        entityType = "EXPENSE",
+                        entityId = expenseId,
+                        eventType = "CREATE",
+                        summary = "Recorded expense of ${incurred.format()} ($category), paid ${paid.format()}",
+                        metadataJson = "{\"incurred\": ${incurred.centavos}, \"paid\": ${paid.centavos}}",
+                        appVersion = "1.0.0"
+                    )
+                )
+            }
+        }
 
         return Result.success(entity.toDomain())
+    }
+
+    suspend fun recordExpensePayment(
+        expenseId: String,
+        amount: Money,
+        date: String,
+        method: PaymentMethod = PaymentMethod.CASH,
+        reference: String = "",
+        notes: String = ""
+    ): Result<ExpensePayment> {
+        val expense = db.expenseDao().getExpenseById(expenseId)
+            ?: return Result.failure(IllegalArgumentException("Expense not found"))
+
+        if (expense.isVoided) {
+            return Result.failure(IllegalStateException("Cannot accept payment on voided expense"))
+        }
+
+        if (amount.centavos <= 0L) {
+            return Result.failure(IllegalArgumentException("Payment amount must be greater than ₱0.00"))
+        }
+
+        val existingPayments = db.expensePaymentDao().getValidPaymentsForExpenseSync(expenseId)
+        val currentPaid = existingPayments.sumOf { it.amountCentavos }
+        val remaining = (expense.amountIncurredCentavos - currentPaid).coerceAtLeast(0L)
+
+        if (amount.centavos > remaining) {
+            return Result.failure(
+                IllegalArgumentException("Payment of ${amount.format()} exceeds remaining expense balance of ${Money(remaining).format()}. Overpayments rejected.")
+            )
+        }
+
+        val now = System.currentTimeMillis()
+        val paymentId = "exp_pay_${UUID.randomUUID()}"
+        val paymentEntity = ExpensePaymentEntity(
+            id = paymentId,
+            expenseId = expenseId,
+            supplierId = expense.supplierId,
+            date = date,
+            amountCentavos = amount.centavos,
+            paymentMethod = method.name,
+            reference = reference,
+            notes = notes,
+            isVoided = false,
+            createdAt = now
+        )
+
+        val newTotalPaid = currentPaid + amount.centavos
+        val updatedExpense = expense.copy(amountPaidCentavos = newTotalPaid, updatedAt = now)
+
+        // Atomic transaction: Insert expense payment and update parent cached amountPaidCentavos
+        db.runInTransaction {
+            kotlinx.coroutines.runBlocking {
+                db.expensePaymentDao().insertExpensePayment(paymentEntity)
+                db.expenseDao().updateExpense(updatedExpense)
+                db.auditLogDao().insertAuditLog(
+                    AuditLogEntity(
+                        id = "audit_${UUID.randomUUID()}",
+                        timestamp = now,
+                        entityType = "EXPENSE",
+                        entityId = paymentId,
+                        eventType = "CREATE",
+                        summary = "Recorded expense payment of ${amount.format()} for expense $expenseId",
+                        metadataJson = "{\"expenseId\": \"$expenseId\", \"amount\": ${amount.centavos}}",
+                        appVersion = "1.0.0"
+                    )
+                )
+            }
+        }
+
+        return Result.success(paymentEntity.toDomain())
+    }
+
+    suspend fun voidExpensePayment(paymentId: String, reason: String = ""): Result<Unit> {
+        val payment = db.expensePaymentDao().getExpensePaymentById(paymentId)
+            ?: return Result.failure(IllegalArgumentException("Expense payment not found"))
+
+        if (payment.isVoided) {
+            return Result.failure(IllegalStateException("Expense payment is already voided"))
+        }
+
+        val expense = db.expenseDao().getExpenseById(payment.expenseId)
+            ?: return Result.failure(IllegalArgumentException("Parent expense not found"))
+
+        val now = System.currentTimeMillis()
+        db.runInTransaction {
+            kotlinx.coroutines.runBlocking {
+                db.expensePaymentDao().updateExpensePayment(payment.copy(isVoided = true))
+                val validRemaining = db.expensePaymentDao().getValidPaymentsForExpenseSync(payment.expenseId)
+                val newPaidSum = validRemaining.sumOf { it.amountCentavos }
+                db.expenseDao().updateExpense(expense.copy(amountPaidCentavos = newPaidSum, updatedAt = now))
+                db.auditLogDao().insertAuditLog(
+                    AuditLogEntity(
+                        id = "audit_${UUID.randomUUID()}",
+                        timestamp = now,
+                        entityType = "EXPENSE",
+                        entityId = paymentId,
+                        eventType = "VOID",
+                        summary = "Voided expense payment $paymentId of ${Money(payment.amountCentavos).format()}",
+                        metadataJson = "{\"paymentId\": \"$paymentId\", \"reason\": \"$reason\"}",
+                        appVersion = "1.0.0"
+                    )
+                )
+            }
+        }
+        return Result.success(Unit)
     }
 
     // ================= VOIDING =================
@@ -277,20 +401,29 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         }
 
         val now = System.currentTimeMillis()
-        val updated = expense.copy(isVoided = true, updatedAt = now)
-        db.expenseDao().updateExpense(updated)
-        db.auditLogDao().insertAuditLog(
-            AuditLogEntity(
-                id = "audit_${UUID.randomUUID()}",
-                timestamp = now,
-                entityType = "EXPENSE",
-                entityId = expenseId,
-                eventType = "VOID",
-                summary = "Voided expense $expenseId of ${Money(expense.amountIncurredCentavos).format()}. Reason: $reason",
-                metadataJson = "{\"expenseId\": \"$expenseId\"}",
-                appVersion = "1.0.0"
-            )
-        )
+        val childPayments = db.expensePaymentDao().getValidPaymentsForExpenseSync(expenseId)
+
+        db.runInTransaction {
+            kotlinx.coroutines.runBlocking {
+                val updated = expense.copy(isVoided = true, updatedAt = now)
+                db.expenseDao().updateExpense(updated)
+                for (p in childPayments) {
+                    db.expensePaymentDao().updateExpensePayment(p.copy(isVoided = true))
+                }
+                db.auditLogDao().insertAuditLog(
+                    AuditLogEntity(
+                        id = "audit_${UUID.randomUUID()}",
+                        timestamp = now,
+                        entityType = "EXPENSE",
+                        entityId = expenseId,
+                        eventType = "VOID",
+                        summary = "Voided expense $expenseId of ${Money(expense.amountIncurredCentavos).format()}. Reason: $reason. ${childPayments.size} associated payments voided.",
+                        metadataJson = "{\"expenseId\": \"$expenseId\", \"reason\": \"$reason\"}",
+                        appVersion = "1.0.0"
+                    )
+                )
+            }
+        }
         return Result.success(Unit)
     }
 
@@ -556,5 +689,18 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         isVoided = isVoided,
         createdAt = createdAt,
         updatedAt = updatedAt
+    )
+
+    private fun ExpensePaymentEntity.toDomain() = ExpensePayment(
+        id = id,
+        expenseId = expenseId,
+        supplierId = supplierId,
+        date = date,
+        amount = Money(amountCentavos),
+        paymentMethod = try { PaymentMethod.valueOf(paymentMethod) } catch (_: Exception) { PaymentMethod.CASH },
+        reference = reference,
+        notes = notes,
+        isVoided = isVoided,
+        createdAt = createdAt
     )
 }
