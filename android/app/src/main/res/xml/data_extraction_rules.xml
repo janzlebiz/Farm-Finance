@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Authoritative local data managed by explicit encrypted backup/restore -->
+        <exclude domain="database" path="farm_finance.db" />
+        <exclude domain="sharedpref" path="farm_finance_secure_prefs.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="farm_finance.db" />
+    </device-transfer>
+</data-extraction-rules>

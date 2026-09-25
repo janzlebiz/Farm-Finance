@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Farm Finance</string>
+    <string name="currency_symbol">₱</string>
+    <string name="rice_crop">Rice</string>
+    <string name="copra_crop">Copra</string>
+</resources>

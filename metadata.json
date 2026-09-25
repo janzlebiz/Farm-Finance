@@ -1,0 +1,6 @@
+{
+  "name": "Farm Finance",
+  "description": "Production-oriented mobile financial and production tracking application for rice and copra farm businesses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
