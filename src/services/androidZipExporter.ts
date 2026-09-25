@@ -502,8 +502,10 @@ jobs:
 
       - name: Build Web Application
         run: |
-          npm ci || npm install
-          npm run build
+          if [ -f "package.json" ]; then
+            npm install --legacy-peer-deps --no-audit
+            npm run build
+          fi
 
       - name: Determine Project Directory & Ensure Assets
         id: prep
