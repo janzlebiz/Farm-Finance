@@ -82,6 +82,19 @@ export interface Expense {
   updatedAt: string;
 }
 
+export interface ExpensePayment {
+  id: string;
+  expenseId: string;
+  supplierId?: string;
+  date: string; // YYYY-MM-DD
+  amountCentavos: number; // integer centavos
+  paymentMethod: PaymentMethod;
+  reference?: string;
+  notes?: string;
+  isVoided: boolean;
+  createdAt: string;
+}
+
 export interface ProductionCycle {
   id: string;
   crop: CropType;

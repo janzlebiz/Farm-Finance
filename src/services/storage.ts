@@ -4,6 +4,7 @@ import {
   Sale,
   Payment,
   Expense,
+  ExpensePayment,
   ExpenseCategory,
   ProductionCycle,
   Harvest,
@@ -15,9 +16,12 @@ import {
 } from '../types';
 import { MoneyUtils } from '../utils/money';
 import { DateUtils } from '../utils/date';
+import { FinancialCalculator } from '../utils/financialCalculator';
+import { computeSha256Sync } from '../utils/crypto';
 
 export const APP_VERSION = '1.0.0';
-export const SCHEMA_VERSION = 2; // Versioned schema
+export const DATABASE_SCHEMA_VERSION = 3;
+export const BACKUP_SCHEMA_VERSION = 1;
 
 const DEFAULT_CATEGORIES: string[] = [
   'Seeds & Seedlings',
@@ -36,22 +40,47 @@ const DEFAULT_CATEGORIES: string[] = [
   'Other Farm Expenses'
 ];
 
-interface AppDatabase {
+export interface AppDatabase {
   schemaVersion: number;
   buyers: Buyer[];
   suppliers: Supplier[];
   sales: Sale[];
   payments: Payment[];
   expenses: Expense[];
+  expensePayments?: ExpensePayment[];
   categories: ExpenseCategory[];
   cycles: ProductionCycle[];
   harvests: Harvest[];
   auditLogs: AuditLog[];
 }
 
-const STORAGE_KEY = 'farm_finance_db_v3';
+export interface BackupPayload {
+  appName: string;
+  appVersion: string;
+  backupSchemaVersion: number;
+  exportedAt: string;
+  integrity: {
+    algorithm: 'SHA-256';
+    checksum: string;
+  };
+  database: AppDatabase;
+}
+
+// In-Memory Database store (used in standalone web preview, identical Room SQLite schema)
+let memoryDb: AppDatabase | null = null;
+
+function getNativeBridge(): any {
+  if (typeof window !== 'undefined' && (window as any).FarmFinanceNative?.isAvailable?.()) {
+    return (window as any).FarmFinanceNative;
+  }
+  return null;
+}
 
 export const StorageService = {
+  isNativeAndroid(): boolean {
+    return getNativeBridge() !== null;
+  },
+
   getInitialData(): AppDatabase {
     const categories: ExpenseCategory[] = DEFAULT_CATEGORIES.map((cat, idx) => ({
       id: `cat-${idx + 1}`,
@@ -60,7 +89,7 @@ export const StorageService = {
     }));
 
     return {
-      schemaVersion: SCHEMA_VERSION,
+      schemaVersion: DATABASE_SCHEMA_VERSION,
       categories,
       buyers: [],
       suppliers: [],
@@ -68,279 +97,108 @@ export const StorageService = {
       sales: [],
       payments: [],
       expenses: [],
+      expensePayments: [],
       harvests: [],
       auditLogs: [
         {
-          id: 'audit-init',
+          id: `audit-init-${Date.now()}`,
           timestamp: new Date().toISOString(),
           entityType: 'BACKUP',
           entityId: 'SYSTEM',
           eventType: 'CREATE',
-          summary: 'New farm financial database initialized for user',
+          summary: 'Farm financial database initialized',
           appVersion: APP_VERSION
         }
       ]
     };
   },
 
-  getSampleAcceptanceData(): AppDatabase {
-    const today = DateUtils.getTodayString();
-    const categories: ExpenseCategory[] = DEFAULT_CATEGORIES.map((cat, idx) => ({
-      id: `cat-${idx + 1}`,
-      name: cat,
-      isDefault: true
-    }));
-
-    return {
-      schemaVersion: SCHEMA_VERSION,
-      categories,
-      buyers: [
-        {
-          id: 'buyer-1',
-          name: 'Test Rice Buyer',
-          contactNumber: '+63 917 123 4567',
-          address: 'Poblacion Market, San Jose',
-          notes: 'Regular miller buyer for palay/rice grain',
-          createdDate: today,
-          status: 'ACTIVE'
-        },
-        {
-          id: 'buyer-2',
-          name: 'Test Copra Buyer',
-          contactNumber: '+63 928 987 6543',
-          address: 'Port Area Oil Mill Depot',
-          notes: 'Commercial copra buying station',
-          createdDate: today,
-          status: 'ACTIVE'
-        }
-      ],
-      suppliers: [
-        {
-          id: 'supp-1',
-          name: 'AgriSupply Central',
-          contactNumber: '+63 919 555 1212',
-          address: 'Highway Corner, District 2',
-          notes: 'Certified rice seed & fertilizer dealer',
-          createdDate: today,
-          status: 'ACTIVE'
-        },
-        {
-          id: 'supp-2',
-          name: 'Barangay Labor Association',
-          contactNumber: '+63 920 444 8888',
-          address: 'Sitio Riverside',
-          notes: 'Farm laborers and harvesters crew',
-          createdDate: today,
-          status: 'ACTIVE'
-        }
-      ],
-      cycles: [
-        {
-          id: 'cycle-1',
-          crop: 'Rice',
-          cycleName: 'Rice — Wet Season 2026',
-          startDate: `${today.substring(0, 7)}-01`,
-          expectedHarvestDate: `${today.substring(0, 4)}-11-15`,
-          farmField: 'North Paddy Parcel A',
-          area: 2.5,
-          areaUnit: 'hectares',
-          status: 'ACTIVE',
-          notes: 'Certified RC-222 high yield seed planted',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: 'cycle-2',
-          crop: 'Copra',
-          cycleName: 'Copra — Production Cycle 2026',
-          startDate: `${today.substring(0, 4)}-01-10`,
-          farmField: 'Hillside Coconut Plantation',
-          area: 4.0,
-          areaUnit: 'hectares',
-          status: 'ACTIVE',
-          notes: 'Bimonthly nut collection and tapahan drying',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
-      ],
-      sales: [
-        // Acceptance test requirement 1: Rice 1,000 kg @ ₱32/kg = ₱32,000
-        {
-          id: 'sale-rice-acceptance',
-          date: today,
-          crop: 'Rice',
-          quantity: 1000,
-          unit: 'kg',
-          unitPriceCentavos: 3200, // ₱32.00
-          grossAmountCentavos: 3200000, // ₱32,000.00
-          buyerId: 'buyer-1',
-          buyerNameSnapshot: 'Test Rice Buyer',
-          notes: 'Wet palay sale after harvest drying',
-          cycleId: 'cycle-1',
-          isVoided: false,
-          createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-          updatedAt: new Date(Date.now() - 3600000 * 5).toISOString()
-        },
-        // Acceptance test requirement 2: Copra 850 kg @ ₱42/kg = ₱35,700
-        {
-          id: 'sale-copra-acceptance',
-          date: today,
-          crop: 'Copra',
-          quantity: 850,
-          unit: 'kg',
-          unitPriceCentavos: 4200, // ₱42.00
-          grossAmountCentavos: 3570000, // ₱35,700.00
-          buyerId: 'buyer-2',
-          buyerNameSnapshot: 'Test Copra Buyer',
-          notes: 'Grade A smoked copra delivery',
-          cycleId: 'cycle-2',
-          isVoided: false,
-          createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-          updatedAt: new Date(Date.now() - 3600000 * 4).toISOString()
-        }
-      ],
-      payments: [
-        // Acceptance test requirement 3: Payment 1 = ₱20,000, Payment 2 = ₱10,000 against Rice sale
-        {
-          id: 'pay-1',
-          saleId: 'sale-rice-acceptance',
-          buyerId: 'buyer-1',
-          date: today,
-          amountCentavos: 2000000, // ₱20,000.00
-          paymentMethod: 'CASH',
-          reference: 'OR-9901',
-          notes: 'Down payment upon weighing',
-          isVoided: false,
-          createdAt: new Date(Date.now() - 3600000 * 3).toISOString()
-        },
-        {
-          id: 'pay-2',
-          saleId: 'sale-rice-acceptance',
-          buyerId: 'buyer-1',
-          date: today,
-          amountCentavos: 1000000, // ₱10,000.00
-          paymentMethod: 'GCASH',
-          reference: 'GC-10293847',
-          notes: 'Second installment',
-          isVoided: false,
-          createdAt: new Date(Date.now() - 3600000 * 2).toISOString()
-        }
-      ],
-      expenses: [
-        // Acceptance test requirement 4: Rice expense: Incurred ₱350, Paid ₱100, Unpaid ₱250
-        {
-          id: 'exp-rice-acceptance',
-          date: today,
-          category: 'Labor & Harvesting Wages',
-          amountIncurredCentavos: 35000, // ₱350.00
-          amountPaidCentavos: 10000, // ₱100.00
-          description: 'Hauling sacks from paddy to drying pavement',
-          crop: 'Rice',
-          cycleId: 'cycle-1',
-          supplierId: 'supp-2',
-          supplierNameSnapshot: 'Barangay Labor Association',
-          paymentMethod: 'CASH',
-          reference: 'VOUCHER-01',
-          notes: 'Partial payment made, balance ₱250 payable next week',
-          isVoided: false,
-          createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-          updatedAt: new Date(Date.now() - 3600000 * 1).toISOString()
-        }
-      ],
-      harvests: [
-        {
-          id: 'harv-1',
-          cycleId: 'cycle-1',
-          crop: 'Rice',
-          date: today,
-          quantity: 1200,
-          unit: 'kg',
-          gradeQuality: 'Standard Palay Grade 1',
-          sellingPriceCentavos: 3200,
-          buyerId: 'buyer-1',
-          notes: 'Total yield from Parcel A',
-          createdAt: new Date(Date.now() - 3600000 * 6).toISOString()
-        },
-        {
-          id: 'harv-2',
-          cycleId: 'cycle-2',
-          crop: 'Copra',
-          date: today,
-          quantity: 850,
-          unit: 'kg',
-          gradeQuality: 'Smoked Grade A',
-          sellingPriceCentavos: 4200,
-          buyerId: 'buyer-2',
-          notes: 'Tapahan kiln dried yield',
-          createdAt: new Date(Date.now() - 3600000 * 5).toISOString()
-        }
-      ],
-      auditLogs: [
-        {
-          id: 'audit-init-sample',
-          timestamp: new Date().toISOString(),
-          entityType: 'BACKUP',
-          entityId: 'SYSTEM',
-          eventType: 'CREATE',
-          summary: 'Database initialized with standard schema and acceptance baseline records',
-          appVersion: APP_VERSION
-        }
-      ]
-    };
-  },
-
+  // Authoritative load of full database
   loadDatabase(): AppDatabase {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        // One-time migration check from v1.0 localStorage
+        this.checkAndMigrateLegacyLocalStorage(bridge);
+
+        const rawState = bridge.getDatabaseState();
+        const parsed = JSON.parse(rawState);
+        const categories: ExpenseCategory[] = DEFAULT_CATEGORIES.map((cat, idx) => ({
+          id: `cat-${idx + 1}`,
+          name: cat,
+          isDefault: true
+        }));
+        return {
+          schemaVersion: parsed.schemaVersion || DATABASE_SCHEMA_VERSION,
+          categories,
+          buyers: parsed.buyers || [],
+          suppliers: parsed.suppliers || [],
+          cycles: parsed.cycles || [],
+          sales: parsed.sales || [],
+          payments: parsed.payments || [],
+          expenses: parsed.expenses || [],
+          expensePayments: parsed.expensePayments || [],
+          harvests: parsed.harvests || [],
+          auditLogs: parsed.auditLogs || []
+        };
+      } catch (err) {
+        console.error('[FarmFinance] Native bridge read failure, using fallback:', err);
+      }
+    }
+
+    if (!memoryDb) {
+      // Check if session has stored data
+      try {
+        const raw = sessionStorage.getItem('farm_finance_preview_db');
+        if (raw) {
+          memoryDb = JSON.parse(raw);
+        }
+      } catch (_: any) {}
+
+      if (!memoryDb) {
+        memoryDb = this.getInitialData();
+      }
+    }
+    return memoryDb;
+  },
+
+  saveMemoryDatabase(db: AppDatabase): void {
+    memoryDb = db;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        const initial = this.getInitialData();
-        this.saveDatabase(initial);
-        return initial;
+      sessionStorage.setItem('farm_finance_preview_db', JSON.stringify(db));
+    } catch (_: any) {}
+  },
+
+  // One-time automatic migration of v1.0 localStorage data into native Room
+  checkAndMigrateLegacyLocalStorage(bridge: any): void {
+    try {
+      const migrationFlag = localStorage.getItem('farm_finance_native_migrated');
+      if (migrationFlag === 'true') return;
+
+      const legacyDataRaw = localStorage.getItem('farm_finance_db_v2') || localStorage.getItem('farm_finance_db_v3');
+      if (!legacyDataRaw) {
+        localStorage.setItem('farm_finance_native_migrated', 'true');
+        return;
       }
-      const parsed: AppDatabase = JSON.parse(raw);
-      // Migration check
-      if (!parsed.schemaVersion || parsed.schemaVersion < SCHEMA_VERSION) {
-        return this.migrateDatabase(parsed);
+
+      console.log('[FarmFinance] Migrating legacy localStorage data to Room SQLite...');
+      const resultJson = bridge.migrateFromLocalStorage(legacyDataRaw);
+      const res = JSON.parse(resultJson);
+
+      if (res.success) {
+        console.log('[FarmFinance] Migration to native Room SUCCESS:', res.summary || res.message);
+        // Safely archive and mark migrated; do not use localStorage as ledger anymore
+        localStorage.setItem('farm_finance_native_migrated', 'true');
+        localStorage.removeItem('farm_finance_db_v2');
+        localStorage.removeItem('farm_finance_db_v3');
+      } else {
+        console.warn('[FarmFinance] Migration notice:', res.error);
       }
-      return parsed;
     } catch (e) {
-      console.error('Failed to load database, falling back to defaults:', e);
-      return this.getInitialData();
+      console.error('[FarmFinance] Migration error:', e);
     }
   },
 
-  migrateDatabase(oldData: any): AppDatabase {
-    console.log(`Migrating database from version ${oldData.schemaVersion || 1} to ${SCHEMA_VERSION}`);
-    const updated: AppDatabase = {
-      ...this.getInitialData(),
-      ...oldData,
-      schemaVersion: SCHEMA_VERSION
-    };
-    // Ensure audit trail exists
-    if (!updated.auditLogs) updated.auditLogs = [];
-    updated.auditLogs.push({
-      id: `audit-mig-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      entityType: 'BACKUP',
-      entityId: 'SCHEMA',
-      eventType: 'UPDATE',
-      summary: `Automated migration applied to schema version ${SCHEMA_VERSION}`,
-      metadata: { fromVersion: oldData.schemaVersion || 1, toVersion: SCHEMA_VERSION },
-      appVersion: APP_VERSION
-    });
-    this.saveDatabase(updated);
-    return updated;
-  },
-
-  saveDatabase(db: AppDatabase): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-    } catch (e) {
-      console.error('Failed to save database to localStorage:', e);
-    }
-  },
-
-  // Log an append-only audit record
   addAuditLog(
     db: AppDatabase,
     entityType: AuditLog['entityType'],
@@ -359,33 +217,61 @@ export const StorageService = {
       metadata,
       appVersion: APP_VERSION
     };
-    db.auditLogs.unshift(log); // newest first
+    db.auditLogs.unshift(log);
   },
 
   // =================== SALES ===================
   getSales(): Sale[] {
-    const db = this.loadDatabase();
-    return db.sales;
+    return this.loadDatabase().sales;
   },
 
-  createSale(
-    data: Omit<Sale, 'id' | 'grossAmountCentavos' | 'buyerNameSnapshot' | 'isVoided' | 'createdAt' | 'updatedAt'>
-  ): { sale?: Sale; error?: string } {
+  createSale(data: {
+    date: string;
+    crop: CropType;
+    quantity: number;
+    unit: string;
+    unitPriceCentavos: number;
+    buyerId: string;
+    notes?: string;
+    cycleId?: string;
+  }): { sale?: Sale; error?: string } {
     if (data.quantity <= 0) return { error: 'Quantity must be greater than zero.' };
     if (data.unitPriceCentavos <= 0) return { error: 'Unit price must be greater than zero.' };
 
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.recordSale(JSON.stringify(data));
+        const res = JSON.parse(resStr);
+        if (!res.success) return { error: res.error || 'Failed to record sale' };
+        const db = this.loadDatabase();
+        const created = db.sales.find((s) => s.id === res.saleId);
+        return { sale: created };
+      } catch (e: any) {
+        return { error: e?.message || 'Native sale recording error' };
+      }
+    }
+
+    // In-memory Room fallback
     const db = this.loadDatabase();
     const buyer = db.buyers.find((b) => b.id === data.buyerId);
     if (!buyer) return { error: 'Selected buyer not found.' };
 
-    const gross = MoneyUtils.calculateGross(data.quantity, data.unitPriceCentavos);
+    const gross = FinancialCalculator.calculateGross(data.quantity, data.unitPriceCentavos);
     const now = new Date().toISOString();
 
     const newSale: Sale = {
-      ...data,
       id: `sale-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      date: data.date,
+      crop: data.crop,
+      quantity: data.quantity,
+      unit: data.unit,
+      unitPriceCentavos: data.unitPriceCentavos,
       grossAmountCentavos: gross,
-      buyerNameSnapshot: buyer.name, // Snapshot prevents silent alteration
+      buyerId: data.buyerId,
+      buyerNameSnapshot: buyer.name,
+      notes: data.notes?.trim(),
+      cycleId: data.cycleId,
       isVoided: false,
       createdAt: now,
       updatedAt: now
@@ -401,17 +287,28 @@ export const StorageService = {
       { grossCentavos: gross, buyerId: buyer.id }
     );
 
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return { sale: newSale };
   },
 
   voidSale(saleId: string, reason: string): { success: boolean; error?: string } {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.voidSale(saleId, reason);
+        const res = JSON.parse(resStr);
+        return res.success ? { success: true } : { success: false, error: res.error };
+      } catch (e: any) {
+        return { success: false, error: e?.message };
+      }
+    }
+
     const db = this.loadDatabase();
     const sale = db.sales.find((s) => s.id === saleId);
     if (!sale) return { success: false, error: 'Sale not found.' };
     if (sale.isVoided) return { success: false, error: 'Sale is already voided.' };
 
-    // Void associated payments
+    // Cascade voiding to associated payments
     const associatedPayments = db.payments.filter((p) => p.saleId === saleId && !p.isVoided);
     for (const p of associatedPayments) {
       p.isVoided = true;
@@ -428,7 +325,7 @@ export const StorageService = {
       `Voided sale ${sale.id} (${MoneyUtils.formatPesos(sale.grossAmountCentavos)}). Reason: ${reason || 'User voided'}. ${associatedPayments.length} associated payments also voided.`
     );
 
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return { success: true };
   },
 
@@ -443,30 +340,9 @@ export const StorageService = {
     remainingBalanceCentavos: number;
     status: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'VOIDED';
   } {
-    if (sale.isVoided) {
-      return { totalPaidCentavos: 0, remainingBalanceCentavos: 0, status: 'VOIDED' };
-    }
-    const payments = paymentsList || this.getPaymentsForSale(sale.id);
-    const totalPaid = payments
-      .filter((p) => !p.isVoided)
-      .reduce((sum, p) => sum + p.amountCentavos, 0);
-
-    const remaining = MoneyUtils.calculateOutstanding(sale.grossAmountCentavos, totalPaid);
-
-    let status: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' = 'UNPAID';
-    if (totalPaid === 0) {
-      status = 'UNPAID';
-    } else if (remaining === 0) {
-      status = 'PAID';
-    } else {
-      status = 'PARTIALLY_PAID';
-    }
-
-    return {
-      totalPaidCentavos: totalPaid,
-      remainingBalanceCentavos: remaining,
-      status
-    };
+    const db = this.loadDatabase();
+    const payments = paymentsList || db.payments;
+    return FinancialCalculator.computeSaleStatus(sale, payments);
   },
 
   recordPayment(params: {
@@ -477,21 +353,31 @@ export const StorageService = {
     reference?: string;
     notes?: string;
   }): { payment?: Payment; error?: string } {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.recordPayment(JSON.stringify(params));
+        const res = JSON.parse(resStr);
+        if (!res.success) return { error: res.error || 'Failed to record payment' };
+        const db = this.loadDatabase();
+        const created = db.payments.find((p) => p.id === res.paymentId);
+        return { payment: created };
+      } catch (e: any) {
+        return { error: e?.message || 'Native payment recording error' };
+      }
+    }
+
     const db = this.loadDatabase();
     const sale = db.sales.find((s) => s.id === params.saleId);
     if (!sale) return { error: 'Sale record not found.' };
     if (sale.isVoided) return { error: 'Cannot record payment on a voided sale.' };
 
-    // Calculate current balance
     const existingPayments = db.payments.filter((p) => p.saleId === params.saleId && !p.isVoided);
     const totalPaid = existingPayments.reduce((acc, p) => acc + p.amountCentavos, 0);
-    const remainingBalance = sale.grossAmountCentavos - totalPaid;
+    const remainingBalance = Math.max(0, sale.grossAmountCentavos - totalPaid);
 
-    // Reject <= 0 or overpayment
-    const validationError = MoneyUtils.validatePayment(params.amountCentavos, remainingBalance);
-    if (validationError) {
-      return { error: validationError };
-    }
+    const validationError = FinancialCalculator.validatePayment(params.amountCentavos, remainingBalance);
+    if (validationError) return { error: validationError };
 
     const newPayment: Payment = {
       id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -518,11 +404,22 @@ export const StorageService = {
       { saleId: sale.id, remainingBalanceCentavos: newRemaining }
     );
 
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return { payment: newPayment };
   },
 
   voidPayment(paymentId: string, reason: string): { success: boolean; error?: string } {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.voidPayment(paymentId, reason);
+        const res = JSON.parse(resStr);
+        return res.success ? { success: true } : { success: false, error: res.error };
+      } catch (e: any) {
+        return { success: false, error: e?.message };
+      }
+    }
+
     const db = this.loadDatabase();
     const payment = db.payments.find((p) => p.id === paymentId);
     if (!payment) return { success: false, error: 'Payment not found.' };
@@ -537,14 +434,13 @@ export const StorageService = {
       `Voided payment ${payment.id} of ${MoneyUtils.formatPesos(payment.amountCentavos)}. Reason: ${reason || 'User voided'}.`
     );
 
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return { success: true };
   },
 
   // =================== EXPENSES ===================
   getExpenses(): Expense[] {
-    const db = this.loadDatabase();
-    return db.expenses;
+    return this.loadDatabase().expenses;
   },
 
   createExpense(data: {
@@ -560,8 +456,22 @@ export const StorageService = {
     reference?: string;
     notes?: string;
   }): { expense?: Expense; error?: string } {
-    const validationError = MoneyUtils.validateExpense(data.amountIncurredCentavos, data.amountPaidCentavos);
+    const validationError = FinancialCalculator.validateExpense(data.amountIncurredCentavos, data.amountPaidCentavos);
     if (validationError) return { error: validationError };
+
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.recordExpense(JSON.stringify(data));
+        const res = JSON.parse(resStr);
+        if (!res.success) return { error: res.error || 'Failed to record expense' };
+        const db = this.loadDatabase();
+        const created = db.expenses.find((e) => e.id === res.expenseId);
+        return { expense: created };
+      } catch (e: any) {
+        return { error: e?.message || 'Native expense recording error' };
+      }
+    }
 
     const db = this.loadDatabase();
     let supplierName: string | undefined;
@@ -591,11 +501,22 @@ export const StorageService = {
       { incurred: newExpense.amountIncurredCentavos, paid: newExpense.amountPaidCentavos }
     );
 
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return { expense: newExpense };
   },
 
   voidExpense(expenseId: string, reason: string): { success: boolean; error?: string } {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.voidExpense(expenseId, reason);
+        const res = JSON.parse(resStr);
+        return res.success ? { success: true } : { success: false, error: res.error };
+      } catch (e: any) {
+        return { success: false, error: e?.message };
+      }
+    }
+
     const db = this.loadDatabase();
     const expense = db.expenses.find((e) => e.id === expenseId);
     if (!expense) return { success: false, error: 'Expense not found.' };
@@ -612,7 +533,7 @@ export const StorageService = {
       `Voided expense ${expense.id} (${MoneyUtils.formatPesos(expense.amountIncurredCentavos)}). Reason: ${reason || 'User voided'}.`
     );
 
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return { success: true };
   },
 
@@ -622,6 +543,21 @@ export const StorageService = {
   },
 
   createBuyer(data: Omit<Buyer, 'id' | 'createdDate'>): Buyer {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.createBuyer(JSON.stringify(data));
+        const res = JSON.parse(resStr);
+        if (res.success) {
+          const db = this.loadDatabase();
+          const created = db.buyers.find((b) => b.id === res.buyerId);
+          if (created) return created;
+        }
+      } catch (e) {
+        console.error('Bridge createBuyer error:', e);
+      }
+    }
+
     const db = this.loadDatabase();
     const newBuyer: Buyer = {
       ...data,
@@ -630,7 +566,7 @@ export const StorageService = {
     };
     db.buyers.unshift(newBuyer);
     this.addAuditLog(db, 'BUYER', newBuyer.id, 'CREATE', `Added buyer ${newBuyer.name}`);
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return newBuyer;
   },
 
@@ -639,6 +575,21 @@ export const StorageService = {
   },
 
   createSupplier(data: Omit<Supplier, 'id' | 'createdDate'>): Supplier {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.createSupplier(JSON.stringify(data));
+        const res = JSON.parse(resStr);
+        if (res.success) {
+          const db = this.loadDatabase();
+          const created = db.suppliers.find((s) => s.id === res.supplierId);
+          if (created) return created;
+        }
+      } catch (e) {
+        console.error('Bridge createSupplier error:', e);
+      }
+    }
+
     const db = this.loadDatabase();
     const newSupplier: Supplier = {
       ...data,
@@ -647,7 +598,7 @@ export const StorageService = {
     };
     db.suppliers.unshift(newSupplier);
     this.addAuditLog(db, 'SUPPLIER', newSupplier.id, 'CREATE', `Added supplier/payee ${newSupplier.name}`);
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return newSupplier;
   },
 
@@ -663,16 +614,31 @@ export const StorageService = {
       isDefault: false
     };
     db.categories.push(newCat);
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return newCat;
   },
 
-  // =================== PRODUCTION CYCLES & HARVESTS ===================
+  // =================== CYCLES & HARVESTS ===================
   getCycles(): ProductionCycle[] {
     return this.loadDatabase().cycles;
   },
 
   createCycle(data: Omit<ProductionCycle, 'id' | 'createdAt' | 'updatedAt'>): ProductionCycle {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.createCycle(JSON.stringify(data));
+        const res = JSON.parse(resStr);
+        if (res.success) {
+          const db = this.loadDatabase();
+          const created = db.cycles.find((c) => c.id === res.cycleId);
+          if (created) return created;
+        }
+      } catch (e) {
+        console.error('Bridge createCycle error:', e);
+      }
+    }
+
     const db = this.loadDatabase();
     const now = new Date().toISOString();
     const newCycle: ProductionCycle = {
@@ -683,7 +649,7 @@ export const StorageService = {
     };
     db.cycles.unshift(newCycle);
     this.addAuditLog(db, 'CYCLE', newCycle.id, 'CREATE', `Created production cycle "${newCycle.cycleName}" for ${newCycle.crop}`);
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return newCycle;
   },
 
@@ -692,6 +658,21 @@ export const StorageService = {
   },
 
   createHarvest(data: Omit<Harvest, 'id' | 'createdAt'>): Harvest {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.createHarvest(JSON.stringify(data));
+        const res = JSON.parse(resStr);
+        if (res.success) {
+          const db = this.loadDatabase();
+          const created = db.harvests.find((h) => h.id === res.harvestId);
+          if (created) return created;
+        }
+      } catch (e) {
+        console.error('Bridge createHarvest error:', e);
+      }
+    }
+
     const db = this.loadDatabase();
     const newHarvest: Harvest = {
       ...data,
@@ -700,7 +681,7 @@ export const StorageService = {
     };
     db.harvests.unshift(newHarvest);
     this.addAuditLog(db, 'HARVEST', newHarvest.id, 'CREATE', `Logged harvest: ${newHarvest.quantity} ${newHarvest.unit} of ${newHarvest.crop}`);
-    this.saveDatabase(db);
+    this.saveMemoryDatabase(db);
     return newHarvest;
   },
 
@@ -709,158 +690,245 @@ export const StorageService = {
     return this.loadDatabase().auditLogs;
   },
 
-  // =================== DASHBOARD & FINANCIAL METRICS ===================
+  // =================== METRICS ===================
   calculateMetrics(dateFilter: DateFilterType, customStart?: string, customEnd?: string): DashboardMetrics {
     const db = this.loadDatabase();
     const dateRange = DateUtils.getDateRange(dateFilter, customStart, customEnd);
 
-    // 1. Sales within range (valid non-voided)
+    // Filter sales and expenses by date range
     const validSales = db.sales.filter(
       (s) => !s.isVoided && DateUtils.isDateInRange(s.date, dateRange)
     );
-    const totalRevenueCentavos = validSales.reduce((acc, s) => acc + s.grossAmountCentavos, 0);
-
-    // 2. Expenses within range (valid non-voided)
     const validExpenses = db.expenses.filter(
       (e) => !e.isVoided && DateUtils.isDateInRange(e.date, dateRange)
     );
-    const totalExpensesCentavos = validExpenses.reduce((acc, e) => acc + e.amountIncurredCentavos, 0);
-    const cashPaidCentavos = validExpenses.reduce((acc, e) => acc + e.amountPaidCentavos, 0);
-
-    // 3. Payments within range (valid non-voided)
     const validPayments = db.payments.filter(
       (p) => !p.isVoided && DateUtils.isDateInRange(p.date, dateRange)
     );
-    const cashReceivedCentavos = validPayments.reduce((acc, p) => acc + p.amountCentavos, 0);
 
-    // Net income = Revenue - Expenses
-    const netIncomeCentavos = totalRevenueCentavos - totalExpensesCentavos;
-
-    // 4. Receivables across all active valid sales (lifetime outstanding uncollected)
-    // Note: Receivables balance is calculated by subtracting all lifetime valid payments for each active sale
-    const allValidSales = db.sales.filter((s) => !s.isVoided);
-    const allValidPayments = db.payments.filter((p) => !p.isVoided);
-
-    const outstandingReceivablesCentavos = allValidSales.reduce((acc, sale) => {
-      const salePaid = allValidPayments
-        .filter((p) => p.saleId === sale.id)
-        .reduce((sum, p) => sum + p.amountCentavos, 0);
-      const balance = MoneyUtils.calculateOutstanding(sale.grossAmountCentavos, salePaid);
-      return acc + balance;
-    }, 0);
-
-    // Crop Profitability
-    const riceSales = validSales.filter((s) => s.crop === 'Rice');
-    const riceRev = riceSales.reduce((sum, s) => sum + s.grossAmountCentavos, 0);
-    const riceExp = validExpenses
-      .filter((e) => e.crop === 'Rice')
-      .reduce((sum, e) => sum + e.amountIncurredCentavos, 0);
-    const riceProfitabilityCentavos = riceRev - riceExp;
-
-    const copraSales = validSales.filter((s) => s.crop === 'Copra');
-    const copraRev = copraSales.reduce((sum, s) => sum + s.grossAmountCentavos, 0);
-    const copraExp = validExpenses
-      .filter((e) => e.crop === 'Copra')
-      .reduce((sum, e) => sum + e.amountIncurredCentavos, 0);
-    const copraProfitabilityCentavos = copraRev - copraExp;
-
-    return {
-      totalRevenueCentavos,
-      totalExpensesCentavos,
-      netIncomeCentavos,
-      cashReceivedCentavos,
-      cashPaidCentavos,
-      outstandingReceivablesCentavos,
-      salesCount: validSales.length,
-      expensesCount: validExpenses.length,
-      riceProfitabilityCentavos,
-      copraProfitabilityCentavos
-    };
+    return FinancialCalculator.calculateDashboard(validSales, validPayments, validExpenses);
   },
 
-  // =================== BACKUP, RESTORE & EXPORT ===================
+  // =================== CRYPTOGRAPHIC BACKUP & RESTORE ===================
   exportBackupJson(): string {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        return bridge.exportBackup();
+      } catch (e) {
+        console.error('Bridge exportBackup error:', e);
+      }
+    }
+
     const db = this.loadDatabase();
-    const serialized = JSON.stringify(db, null, 2);
+    this.addAuditLog(db, 'BACKUP', 'EXPORT', 'BACKUP_EXPORT', 'Cryptographic SHA-256 backup exported');
+    this.saveMemoryDatabase(db);
 
-    // Record audit event
-    this.addAuditLog(db, 'BACKUP', 'EXPORT', 'BACKUP_EXPORT', 'Full database backup JSON created');
-    this.saveDatabase(db);
+    const serializedDb = JSON.stringify(db);
+    const sha256Hex = computeSha256Sync(serializedDb);
+    const nowIso = new Date().toISOString();
 
-    return JSON.stringify({
+    const backupPayload: BackupPayload = {
       appName: 'Farm Finance',
       appVersion: APP_VERSION,
-      schemaVersion: db.schemaVersion,
-      exportedAt: new Date().toISOString(),
-      checksum: this.calculateSimpleHash(serialized),
+      backupSchemaVersion: BACKUP_SCHEMA_VERSION,
+      exportedAt: nowIso,
+      integrity: {
+        algorithm: 'SHA-256',
+        checksum: sha256Hex
+      },
       database: db
-    }, null, 2);
+    };
+
+    return JSON.stringify(backupPayload, null, 2);
   },
 
+  /**
+   * Transactional Restore with 15-step Validation:
+   * NEVER alters the active database if any validation fails.
+   */
   validateAndRestoreBackup(jsonString: string): { success: boolean; message: string; preview?: any } {
-    try {
-      const parsed = JSON.parse(jsonString);
-      if (!parsed.database || typeof parsed.database !== 'object') {
-        return { success: false, message: 'Invalid backup file: missing database payload.' };
+    const bridge = getNativeBridge();
+    if (bridge) {
+      try {
+        const resStr = bridge.restoreBackup(jsonString);
+        const res = JSON.parse(resStr);
+        if (res.success) {
+          return { success: true, message: res.message, preview: res.preview };
+        } else {
+          return { success: false, message: res.error || 'Restore validation failed' };
+        }
+      } catch (e: any) {
+        return { success: false, message: `Native restore error: ${e?.message}` };
       }
-      const db: AppDatabase = parsed.database;
-      if (!Array.isArray(db.sales) || !Array.isArray(db.payments) || !Array.isArray(db.expenses)) {
-        return { success: false, message: 'Invalid backup structure: sales, payments, or expenses missing.' };
-      }
+    }
 
-      // Check schema version compatibility
-      if (db.schemaVersion > SCHEMA_VERSION) {
+    try {
+      // 1. Read & parse JSON
+      const parsed = JSON.parse(jsonString);
+
+      // 2. Validate backup schema version
+      if (parsed.backupSchemaVersion !== BACKUP_SCHEMA_VERSION) {
         return {
           success: false,
-          message: `Backup schema version (${db.schemaVersion}) is newer than this app (${SCHEMA_VERSION}). Please upgrade the app first.`
+          message: `Unsupported backup schema version: ${parsed.backupSchemaVersion}. Expected: ${BACKUP_SCHEMA_VERSION}`
         };
       }
 
-      // Restore
-      db.schemaVersion = SCHEMA_VERSION;
-      if (!db.auditLogs) db.auditLogs = [];
+      // 3. Validate integrity checksum
+      if (!parsed.integrity || parsed.integrity.algorithm !== 'SHA-256' || !parsed.integrity.checksum) {
+        return { success: false, message: 'Backup file missing cryptographic SHA-256 integrity block.' };
+      }
+
+      if (!parsed.database || typeof parsed.database !== 'object') {
+        return { success: false, message: 'Backup file missing database payload.' };
+      }
+
+      const dbPayload: AppDatabase = parsed.database;
+      const computedHash = computeSha256Sync(JSON.stringify(dbPayload));
+
+      if (computedHash.toLowerCase() !== parsed.integrity.checksum.toLowerCase()) {
+        return {
+          success: false,
+          message: 'Cryptographic integrity failure: SHA-256 checksum mismatch. Backup file is corrupted or modified.'
+        };
+      }
+
+      // 4. Validate array structures
+      if (!Array.isArray(dbPayload.buyers) || !Array.isArray(dbPayload.sales) || !Array.isArray(dbPayload.payments) || !Array.isArray(dbPayload.expenses)) {
+        return { success: false, message: 'Malformed backup: buyers, sales, payments, or expenses array missing.' };
+      }
+
+      // 5. Strict ID and Foreign-Key Validation in memory
+      const buyerIds = new Set<string>();
+      for (const b of dbPayload.buyers) {
+        if (!b.id || typeof b.id !== 'string') return { success: false, message: 'Found buyer with invalid or missing ID.' };
+        if (buyerIds.has(b.id)) return { success: false, message: `Duplicate buyer ID detected: ${b.id}` };
+        buyerIds.add(b.id);
+      }
+
+      const supplierIds = new Set<string>();
+      if (Array.isArray(dbPayload.suppliers)) {
+        for (const s of dbPayload.suppliers) {
+          if (!s.id || typeof s.id !== 'string') return { success: false, message: 'Found supplier with invalid or missing ID.' };
+          if (supplierIds.has(s.id)) return { success: false, message: `Duplicate supplier ID detected: ${s.id}` };
+          supplierIds.add(s.id);
+        }
+      }
+
+      const cycleIds = new Set<string>();
+      if (Array.isArray(dbPayload.cycles)) {
+        for (const c of dbPayload.cycles) {
+          if (!c.id || typeof c.id !== 'string') return { success: false, message: 'Found cycle with invalid or missing ID.' };
+          if (cycleIds.has(c.id)) return { success: false, message: `Duplicate cycle ID detected: ${c.id}` };
+          cycleIds.add(c.id);
+        }
+      }
+
+      const saleIds = new Set<string>();
+      const saleGrossMap = new Map<string, number>();
+      for (const s of dbPayload.sales) {
+        if (!s.id || typeof s.id !== 'string') return { success: false, message: 'Found sale with invalid or missing ID.' };
+        if (saleIds.has(s.id)) return { success: false, message: `Duplicate sale ID detected: ${s.id}` };
+        saleIds.add(s.id);
+
+        if (!buyerIds.has(s.buyerId)) {
+          return { success: false, message: `Dangling buyer reference: sale ${s.id} references non-existent buyer ${s.buyerId}.` };
+        }
+        if (s.cycleId && !cycleIds.has(s.cycleId)) {
+          return { success: false, message: `Dangling cycle reference: sale ${s.id} references non-existent cycle ${s.cycleId}.` };
+        }
+        if (s.quantity <= 0 || s.unitPriceCentavos <= 0) {
+          return { success: false, message: `Invalid non-positive quantity or price in sale ${s.id}.` };
+        }
+        const expectedGross = FinancialCalculator.calculateGross(s.quantity, s.unitPriceCentavos);
+        if (Math.abs(s.grossAmountCentavos - expectedGross) > 1) {
+          return { success: false, message: `Gross amount invariant violated in sale ${s.id}: recorded ${s.grossAmountCentavos} vs calculated ${expectedGross}.` };
+        }
+        saleGrossMap.set(s.id, s.grossAmountCentavos);
+      }
+
+      const paymentIds = new Set<string>();
+      const salePaidMap = new Map<string, number>();
+      for (const p of dbPayload.payments) {
+        if (!p.id || typeof p.id !== 'string') return { success: false, message: 'Found payment with invalid or missing ID.' };
+        if (paymentIds.has(p.id)) return { success: false, message: `Duplicate payment ID detected: ${p.id}` };
+        paymentIds.add(p.id);
+
+        if (!saleIds.has(p.saleId)) {
+          return { success: false, message: `Dangling sale reference: payment ${p.id} references non-existent sale ${p.saleId}.` };
+        }
+        if (p.amountCentavos <= 0) {
+          return { success: false, message: `Invalid non-positive payment amount in payment ${p.id}.` };
+        }
+        if (!p.isVoided) {
+          const currentTotal = (salePaidMap.get(p.saleId) || 0) + p.amountCentavos;
+          const gross = saleGrossMap.get(p.saleId) || 0;
+          if (currentTotal > gross) {
+            return {
+              success: false,
+              message: `Overpayment detected on sale ${p.saleId}: cumulative payments (${MoneyUtils.formatPesos(currentTotal)}) exceed sale gross (${MoneyUtils.formatPesos(gross)}).`
+            };
+          }
+          salePaidMap.set(p.saleId, currentTotal);
+        }
+      }
+
+      for (const e of dbPayload.expenses) {
+        if (!e.id || typeof e.id !== 'string') return { success: false, message: 'Found expense with invalid ID.' };
+        if (e.amountIncurredCentavos <= 0) return { success: false, message: `Expense ${e.id} incurred amount must be > 0.` };
+        if (e.amountPaidCentavos < 0 || e.amountPaidCentavos > e.amountIncurredCentavos) {
+          return { success: false, message: `Expense ${e.id} amount paid must be between 0 and incurred.` };
+        }
+        if (e.supplierId && !supplierIds.has(e.supplierId)) {
+          return { success: false, message: `Dangling supplier reference in expense ${e.id}: ${e.supplierId}.` };
+        }
+      }
+
+      // 6. All 15 validations passed! Atomically commit to store
+      const stagingDb: AppDatabase = {
+        schemaVersion: DATABASE_SCHEMA_VERSION,
+        categories: dbPayload.categories || DEFAULT_CATEGORIES.map((c, i) => ({ id: `cat-${i + 1}`, name: c, isDefault: true })),
+        buyers: dbPayload.buyers,
+        suppliers: dbPayload.suppliers || [],
+        cycles: dbPayload.cycles || [],
+        sales: dbPayload.sales,
+        payments: dbPayload.payments,
+        expenses: dbPayload.expenses,
+        expensePayments: dbPayload.expensePayments || [],
+        harvests: dbPayload.harvests || [],
+        auditLogs: dbPayload.auditLogs || []
+      };
+
       this.addAuditLog(
-        db,
+        stagingDb,
         'BACKUP',
         'RESTORE',
         'RESTORE',
-        `Database restored from backup dated ${parsed.exportedAt || 'Unknown'}`
+        `Database restored from verified SHA-256 backup (${stagingDb.sales.length} sales, ${stagingDb.payments.length} payments, ${stagingDb.expenses.length} expenses)`
       );
 
-      this.saveDatabase(db);
+      this.saveMemoryDatabase(stagingDb);
+
       return {
         success: true,
-        message: `Successfully restored ${db.sales.length} sales, ${db.payments.length} payments, and ${db.expenses.length} expenses.`,
+        message: `Successfully verified and restored ${stagingDb.sales.length} sales, ${stagingDb.payments.length} payments, and ${stagingDb.expenses.length} expenses.`,
         preview: {
-          sales: db.sales.length,
-          payments: db.payments.length,
-          expenses: db.expenses.length,
-          buyers: db.buyers.length
+          buyers: stagingDb.buyers.length,
+          sales: stagingDb.sales.length,
+          payments: stagingDb.payments.length,
+          expenses: stagingDb.expenses.length
         }
       };
     } catch (e: any) {
-      return { success: false, message: `Parse error: ${e?.message || 'Invalid JSON file'}` };
+      return { success: false, message: `Backup parse error: ${e?.message || 'Invalid JSON format'}` };
     }
   },
 
-  resetToDefaultAcceptanceData(): void {
-    const sample = this.getSampleAcceptanceData();
-    this.saveDatabase(sample);
-  },
-
+  // Reset to clean production state (empty database, no demo records)
   resetToCleanState(): void {
     const clean = this.getInitialData();
-    this.saveDatabase(clean);
-  },
-
-  calculateSimpleHash(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash |= 0; // Convert to 32bit integer
-    }
-    return `chk-${Math.abs(hash).toString(16)}`;
+    this.saveMemoryDatabase(clean);
   },
 
   // CSV Generation for all major datasets

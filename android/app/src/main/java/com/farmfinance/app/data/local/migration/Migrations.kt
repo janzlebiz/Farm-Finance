@@ -41,3 +41,32 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         )
     }
 }
+
+/**
+ * Migration from Database Version 2 to Version 3:
+ * Adds `expense_payments` table to support multiple payments for expenses,
+ * mirroring the payment architecture of sales.
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS expense_payments (
+                id TEXT NOT NULL PRIMARY KEY,
+                expenseId TEXT NOT NULL,
+                supplierId TEXT,
+                date TEXT NOT NULL,
+                amountCentavos INTEGER NOT NULL,
+                paymentMethod TEXT NOT NULL,
+                reference TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                isVoided INTEGER NOT NULL,
+                createdAt INTEGER NOT NULL,
+                FOREIGN KEY(expenseId) REFERENCES expenses(id) ON UPDATE NO ACTION ON DELETE RESTRICT
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_expense_payments_expenseId ON expense_payments(expenseId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_expense_payments_date ON expense_payments(date)")
+    }
+}

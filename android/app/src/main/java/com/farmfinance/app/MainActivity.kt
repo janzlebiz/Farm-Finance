@@ -1,7 +1,9 @@
 package com.farmfinance.app
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -14,14 +16,28 @@ import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.webkit.WebViewAssetLoader
+import com.farmfinance.app.bridge.FarmFinanceNativeBridge
+import com.farmfinance.app.data.local.FarmFinanceDatabase
+import com.farmfinance.app.data.repository.FarmRepository
+import com.farmfinance.app.security.KeystoreManager
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var webView: WebView
+    private lateinit var database: FarmFinanceDatabase
+    private lateinit var repository: FarmRepository
+    private lateinit var keystoreManager: KeystoreManager
+    private lateinit var nativeBridge: FarmFinanceNativeBridge
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize authoritative native Room persistence and security
+        database = FarmFinanceDatabase.getDatabase(applicationContext)
+        repository = FarmRepository(database)
+        keystoreManager = KeystoreManager(applicationContext)
+        nativeBridge = FarmFinanceNativeBridge(repository, database, keystoreManager, applicationContext)
 
         // Setup WebViewAssetLoader to securely serve local assets from https://appassets.androidplatform.net/
         val assetLoader = WebViewAssetLoader.Builder()
@@ -36,18 +52,24 @@ class MainActivity : ComponentActivity() {
             )
             setBackgroundColor(Color.parseColor("#1b5e20"))
 
+            // Register Authoritative Room Native Bridge
+            addJavascriptInterface(nativeBridge, "FarmFinanceNative")
+
+            // Hardened WebView settings
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                databaseEnabled = true
-                allowFileAccess = true
-                allowContentAccess = true
+                databaseEnabled = false // Deprecated Web SQL disabled
+                allowFileAccess = false // Hardened: No raw file system access
+                allowContentAccess = false // Hardened: No content provider access
+                allowFileAccessFromFileURLs = false
+                allowUniversalAccessFromFileURLs = false
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 setSupportZoom(false)
                 displayZoomControls = false
                 cacheMode = WebSettings.LOAD_DEFAULT
-                mediaPlaybackRequiresUserGesture = false
+                mediaPlaybackRequiresUserGesture = true
             }
 
             webViewClient = object : WebViewClient() {
@@ -62,8 +84,23 @@ class MainActivity : ComponentActivity() {
                     view: WebView,
                     request: WebResourceRequest
                 ): Boolean {
-                    // Keep app navigation inside WebView
-                    return false
+                    val url = request.url
+                    // Enforce origin lock: Only local bundled assets on appassets.androidplatform.net
+                    if (url.scheme == "https" && url.host == "appassets.androidplatform.net") {
+                        return false // Let WebView load local asset
+                    }
+
+                    // Open external links securely in external browser intent
+                    if (url.scheme == "http" || url.scheme == "https") {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, url)
+                            startActivity(intent)
+                        } catch (_: Exception) {
+                            // Suppress intent failure
+                        }
+                        return true
+                    }
+                    return true
                 }
             }
 

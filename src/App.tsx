@@ -16,11 +16,9 @@ import { ReportsTab } from './components/ReportsTab';
 import { SaleModal } from './components/SaleModal';
 import { PaymentModal } from './components/PaymentModal';
 import { ExpenseModal } from './components/ExpenseModal';
-import { AcceptanceTestsModal } from './components/AcceptanceTestsModal';
 import { BackupModal } from './components/BackupModal';
 import { AuditModal } from './components/AuditModal';
 import { ContactsModal } from './components/ContactsModal';
-import { AndroidSourceModal } from './components/AndroidSourceModal';
 import { InstallAppModal } from './components/InstallAppModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -36,17 +34,12 @@ import {
   MoreHorizontal,
   Wifi,
   Battery,
-  ShieldCheck,
   Download,
   Users,
   History,
   Maximize2,
   Minimize2,
-  FolderArchive,
-  Smartphone,
-  Sparkles,
-  CheckCircle2,
-  UserPlus
+  Smartphone
 } from 'lucide-react';
 
 export default function App() {
@@ -75,11 +68,9 @@ export default function App() {
   // "More" drawers
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState<boolean>(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
-  const [isAcceptanceTestsOpen, setIsAcceptanceTestsOpen] = useState<boolean>(false);
   const [isBackupOpen, setIsBackupOpen] = useState<boolean>(false);
   const [isAuditOpen, setIsAuditOpen] = useState<boolean>(false);
   const [isContactsOpen, setIsContactsOpen] = useState<boolean>(false);
-  const [isAndroidSourceOpen, setIsAndroidSourceOpen] = useState<boolean>(false);
 
   // Onboarding state for new users
   const [isOnboardingDismissed, setIsOnboardingDismissed] = useState<boolean>(() => {
@@ -164,14 +155,6 @@ export default function App() {
           </button>
           <span>•</span>
           <button
-            onClick={() => setIsAndroidSourceOpen(true)}
-            className="hover:text-emerald-400 font-semibold flex items-center gap-1 transition"
-          >
-            <FolderArchive className="w-3.5 h-3.5" />
-            Android Project Code
-          </button>
-          <span>•</span>
-          <button
             onClick={() => setIsPhoneFrame(!isPhoneFrame)}
             className="hover:text-white flex items-center gap-1 transition"
             title="Toggle Smartphone Frame"
@@ -230,14 +213,6 @@ export default function App() {
             >
               <Smartphone className="w-4 h-4 text-emerald-300" />
               <span>Install</span>
-            </button>
-            <button
-              onClick={() => setIsAcceptanceTestsOpen(true)}
-              className="p-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 flex items-center gap-1 text-[11px] font-bold transition"
-              title="Run Real-World Acceptance Suite"
-            >
-              <ShieldCheck className="w-4 h-4 text-emerald-300" />
-              <span className="hidden sm:inline">Suite</span>
             </button>
             <button
               onClick={() => setIsMoreMenuOpen(true)}
@@ -391,11 +366,6 @@ export default function App() {
         />
       )}
 
-      {/* Acceptance Tests Modal */}
-      {isAcceptanceTestsOpen && (
-        <AcceptanceTestsModal onClose={() => setIsAcceptanceTestsOpen(false)} />
-      )}
-
       {/* Backup & Restore Modal */}
       {isBackupOpen && (
         <BackupModal
@@ -427,16 +397,10 @@ export default function App() {
         />
       )}
 
-      {/* Android Studio Native Source & Zip Modal */}
-      {isAndroidSourceOpen && (
-        <AndroidSourceModal onClose={() => setIsAndroidSourceOpen(false)} />
-      )}
-
       {/* Install on Phone Modal */}
       {isInstallModalOpen && (
         <InstallAppModal
           onClose={() => setIsInstallModalOpen(false)}
-          onOpenAndroidSource={() => setIsAndroidSourceOpen(true)}
         />
       )}
 
@@ -470,34 +434,6 @@ export default function App() {
                   <span>Install on Phone (Android / iOS / APK)</span>
                 </div>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-200 text-emerald-900 font-bold">Mobile App</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsMoreMenuOpen(false);
-                  setIsAcceptanceTestsOpen(true);
-                }}
-                className="w-full text-left p-3 rounded-xl hover:bg-emerald-50 text-slate-800 font-semibold flex items-center justify-between transition border border-emerald-100"
-              >
-                <div className="flex items-center gap-2.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                  <span>Acceptance Test Suite (100% Pass)</span>
-                </div>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">Sec 25</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsMoreMenuOpen(false);
-                  setIsAndroidSourceOpen(true);
-                }}
-                className="w-full text-left p-3 rounded-xl hover:bg-slate-50 text-slate-800 font-semibold flex items-center justify-between transition border border-slate-200"
-              >
-                <div className="flex items-center gap-2.5">
-                  <FolderArchive className="w-4 h-4 text-emerald-700" />
-                  <span>Android Studio Source Project & Zip</span>
-                </div>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold">Kotlin</span>
               </button>
 
               <button

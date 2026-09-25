@@ -174,6 +174,34 @@ data class HarvestEntity(
 )
 
 @Entity(
+    tableName = "expense_payments",
+    foreignKeys = [
+        ForeignKey(
+            entity = ExpenseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["expenseId"],
+            onDelete = ForeignKey.RESTRICT
+        )
+    ],
+    indices = [
+        Index(value = ["expenseId"]),
+        Index(value = ["date"])
+    ]
+)
+data class ExpensePaymentEntity(
+    @PrimaryKey val id: String,
+    val expenseId: String,
+    val supplierId: String?,
+    val date: String,
+    val amountCentavos: Long,
+    val paymentMethod: String,
+    val reference: String,
+    val notes: String,
+    val isVoided: Boolean,
+    val createdAt: Long
+)
+
+@Entity(
     tableName = "audit_logs",
     indices = [
         Index(value = ["timestamp"]),

@@ -207,7 +207,307 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         return Result.success(entity.toDomain())
     }
 
+    // ================= VOIDING =================
+    suspend fun voidSale(saleId: String, reason: String = ""): Result<Unit> {
+        val sale = db.saleDao().getSaleById(saleId)
+            ?: return Result.failure(IllegalArgumentException("Sale not found"))
+        if (sale.isVoided) {
+            return Result.failure(IllegalStateException("Sale is already voided"))
+        }
+
+        val now = System.currentTimeMillis()
+        val associatedPayments = db.paymentDao().getAllPaymentsForSaleSync(saleId)
+
+        // Transactional voiding of sale and all child payments
+        db.runInTransaction {
+            val updatedSale = sale.copy(isVoided = true, updatedAt = now)
+            kotlinx.coroutines.runBlocking {
+                db.saleDao().updateSale(updatedSale)
+                for (payment in associatedPayments) {
+                    if (!payment.isVoided) {
+                        db.paymentDao().updatePayment(payment.copy(isVoided = true))
+                    }
+                }
+                db.auditLogDao().insertAuditLog(
+                    AuditLogEntity(
+                        id = "audit_${UUID.randomUUID()}",
+                        timestamp = now,
+                        entityType = "SALE",
+                        entityId = saleId,
+                        eventType = "VOID",
+                        summary = "Voided sale $saleId (${Money(sale.grossAmountCentavos).format()}). Reason: $reason. ${associatedPayments.size} associated payments voided.",
+                        metadataJson = "{\"saleId\": \"$saleId\", \"reason\": \"$reason\"}",
+                        appVersion = "1.0.0"
+                    )
+                )
+            }
+        }
+        return Result.success(Unit)
+    }
+
+    suspend fun voidPayment(paymentId: String, reason: String = ""): Result<Unit> {
+        val payment = db.paymentDao().getPaymentById(paymentId)
+            ?: return Result.failure(IllegalArgumentException("Payment not found"))
+        if (payment.isVoided) {
+            return Result.failure(IllegalStateException("Payment is already voided"))
+        }
+
+        val now = System.currentTimeMillis()
+        db.paymentDao().updatePayment(payment.copy(isVoided = true))
+        db.auditLogDao().insertAuditLog(
+            AuditLogEntity(
+                id = "audit_${UUID.randomUUID()}",
+                timestamp = now,
+                entityType = "PAYMENT",
+                entityId = paymentId,
+                eventType = "VOID",
+                summary = "Voided payment $paymentId of ${Money(payment.amountCentavos).format()}. Reason: $reason",
+                metadataJson = "{\"paymentId\": \"$paymentId\", \"saleId\": \"${payment.saleId}\"}",
+                appVersion = "1.0.0"
+            )
+        )
+        return Result.success(Unit)
+    }
+
+    suspend fun voidExpense(expenseId: String, reason: String = ""): Result<Unit> {
+        val expense = db.expenseDao().getExpenseById(expenseId)
+            ?: return Result.failure(IllegalArgumentException("Expense not found"))
+        if (expense.isVoided) {
+            return Result.failure(IllegalStateException("Expense is already voided"))
+        }
+
+        val now = System.currentTimeMillis()
+        val updated = expense.copy(isVoided = true, updatedAt = now)
+        db.expenseDao().updateExpense(updated)
+        db.auditLogDao().insertAuditLog(
+            AuditLogEntity(
+                id = "audit_${UUID.randomUUID()}",
+                timestamp = now,
+                entityType = "EXPENSE",
+                entityId = expenseId,
+                eventType = "VOID",
+                summary = "Voided expense $expenseId of ${Money(expense.amountIncurredCentavos).format()}. Reason: $reason",
+                metadataJson = "{\"expenseId\": \"$expenseId\"}",
+                appVersion = "1.0.0"
+            )
+        )
+        return Result.success(Unit)
+    }
+
+    // ================= BUYERS & SUPPLIERS =================
+    val allBuyers: Flow<List<Buyer>> = db.buyerDao().getAllBuyers().map { entities ->
+        entities.map { it.toDomain() }
+    }
+
+    suspend fun recordBuyer(name: String, contactNumber: String, address: String, notes: String = ""): Result<Buyer> {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) return Result.failure(IllegalArgumentException("Buyer name cannot be empty"))
+        val now = System.currentTimeMillis()
+        val id = "buyer_${UUID.randomUUID()}"
+        val entity = BuyerEntity(
+            id = id,
+            name = cleanName,
+            contactNumber = contactNumber.trim(),
+            address = address.trim(),
+            notes = notes.trim(),
+            createdDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now)),
+            isActive = true
+        )
+        db.buyerDao().insertBuyer(entity)
+        db.auditLogDao().insertAuditLog(
+            AuditLogEntity(
+                id = "audit_${UUID.randomUUID()}",
+                timestamp = now,
+                entityType = "BUYER",
+                entityId = id,
+                eventType = "CREATE",
+                summary = "Added buyer $cleanName",
+                metadataJson = "{\"buyerId\": \"$id\"}",
+                appVersion = "1.0.0"
+            )
+        )
+        return Result.success(entity.toDomain())
+    }
+
+    val allSuppliers: Flow<List<Supplier>> = db.supplierDao().getAllSuppliers().map { entities ->
+        entities.map { it.toDomain() }
+    }
+
+    suspend fun recordSupplier(name: String, contactNumber: String, address: String, notes: String = ""): Result<Supplier> {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) return Result.failure(IllegalArgumentException("Supplier name cannot be empty"))
+        val now = System.currentTimeMillis()
+        val id = "supp_${UUID.randomUUID()}"
+        val entity = SupplierEntity(
+            id = id,
+            name = cleanName,
+            contactNumber = contactNumber.trim(),
+            address = address.trim(),
+            notes = notes.trim(),
+            createdDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now)),
+            isActive = true
+        )
+        db.supplierDao().insertSupplier(entity)
+        db.auditLogDao().insertAuditLog(
+            AuditLogEntity(
+                id = "audit_${UUID.randomUUID()}",
+                timestamp = now,
+                entityType = "SUPPLIER",
+                entityId = id,
+                eventType = "CREATE",
+                summary = "Added supplier $cleanName",
+                metadataJson = "{\"supplierId\": \"$id\"}",
+                appVersion = "1.0.0"
+            )
+        )
+        return Result.success(entity.toDomain())
+    }
+
+    // ================= PRODUCTION =================
+    val allCycles: Flow<List<ProductionCycle>> = db.productionDao().getAllCycles().map { entities ->
+        entities.map { it.toDomain() }
+    }
+
+    suspend fun recordCycle(
+        crop: String,
+        cycleName: String,
+        startDate: String,
+        farmField: String,
+        area: Double,
+        areaUnit: String,
+        expectedHarvestDate: String? = null,
+        notes: String = ""
+    ): Result<ProductionCycle> {
+        val now = System.currentTimeMillis()
+        val id = "cycle_${UUID.randomUUID()}"
+        val entity = ProductionCycleEntity(
+            id = id,
+            crop = crop,
+            cycleName = cycleName.trim(),
+            startDate = startDate,
+            expectedHarvestDate = expectedHarvestDate,
+            actualHarvestDate = null,
+            farmField = farmField.trim(),
+            area = area,
+            areaUnit = areaUnit,
+            status = CycleStatus.ACTIVE.name,
+            notes = notes.trim(),
+            createdAt = now,
+            updatedAt = now
+        )
+        db.productionDao().insertCycle(entity)
+        db.auditLogDao().insertAuditLog(
+            AuditLogEntity(
+                id = "audit_${UUID.randomUUID()}",
+                timestamp = now,
+                entityType = "CYCLE",
+                entityId = id,
+                eventType = "CREATE",
+                summary = "Created cycle $cycleName ($crop)",
+                metadataJson = "{\"cycleId\": \"$id\"}",
+                appVersion = "1.0.0"
+            )
+        )
+        return Result.success(entity.toDomain())
+    }
+
+    val allHarvests: Flow<List<Harvest>> = db.productionDao().getAllHarvests().map { entities ->
+        entities.map { it.toDomain() }
+    }
+
+    suspend fun recordHarvest(
+        cycleId: String,
+        crop: String,
+        date: String,
+        quantity: Double,
+        unit: String,
+        gradeQuality: String = "",
+        sellingPrice: Money? = null,
+        buyerId: String? = null,
+        notes: String = ""
+    ): Result<Harvest> {
+        val now = System.currentTimeMillis()
+        val id = "harv_${UUID.randomUUID()}"
+        val entity = HarvestEntity(
+            id = id,
+            cycleId = cycleId,
+            crop = crop,
+            date = date,
+            quantity = quantity,
+            unit = unit,
+            gradeQuality = gradeQuality,
+            sellingPriceCentavos = sellingPrice?.centavos,
+            buyerId = buyerId,
+            notes = notes.trim(),
+            createdAt = now
+        )
+        db.productionDao().insertHarvest(entity)
+        db.auditLogDao().insertAuditLog(
+            AuditLogEntity(
+                id = "audit_${UUID.randomUUID()}",
+                timestamp = now,
+                entityType = "HARVEST",
+                entityId = id,
+                eventType = "CREATE",
+                summary = "Recorded harvest of $quantity $unit $crop",
+                metadataJson = "{\"harvestId\": \"$id\", \"cycleId\": \"$cycleId\"}",
+                appVersion = "1.0.0"
+            )
+        )
+        return Result.success(entity.toDomain())
+    }
+
     // Entity to Domain mappers
+    private fun BuyerEntity.toDomain() = Buyer(
+        id = id,
+        name = name,
+        contactNumber = contactNumber,
+        address = address,
+        notes = notes,
+        createdDate = createdDate,
+        isActive = isActive
+    )
+
+    private fun SupplierEntity.toDomain() = Supplier(
+        id = id,
+        name = name,
+        contactNumber = contactNumber,
+        address = address,
+        notes = notes,
+        createdDate = createdDate,
+        isActive = isActive
+    )
+
+    private fun ProductionCycleEntity.toDomain() = ProductionCycle(
+        id = id,
+        crop = crop,
+        cycleName = cycleName,
+        startDate = startDate,
+        expectedHarvestDate = expectedHarvestDate,
+        actualHarvestDate = actualHarvestDate,
+        farmField = farmField,
+        area = area,
+        areaUnit = areaUnit,
+        status = try { CycleStatus.valueOf(status) } catch (_: Exception) { CycleStatus.ACTIVE },
+        notes = notes,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+
+    private fun HarvestEntity.toDomain() = Harvest(
+        id = id,
+        cycleId = cycleId,
+        crop = crop,
+        date = date,
+        quantity = quantity,
+        unit = unit,
+        gradeQuality = gradeQuality,
+        sellingPrice = sellingPriceCentavos?.let { Money(it) },
+        buyerId = buyerId,
+        notes = notes,
+        createdAt = createdAt
+    )
+
     private fun SaleEntity.toDomain() = Sale(
         id = id,
         date = date,

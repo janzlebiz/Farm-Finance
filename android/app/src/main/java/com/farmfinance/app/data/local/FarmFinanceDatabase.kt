@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import com.farmfinance.app.data.local.dao.*
 import com.farmfinance.app.data.local.entity.*
 import com.farmfinance.app.data.local.migration.MIGRATION_1_2
+import com.farmfinance.app.data.local.migration.MIGRATION_2_3
 
 @Database(
     entities = [
@@ -15,11 +16,12 @@ import com.farmfinance.app.data.local.migration.MIGRATION_1_2
         SaleEntity::class,
         PaymentEntity::class,
         ExpenseEntity::class,
+        ExpensePaymentEntity::class,
         ProductionCycleEntity::class,
         HarvestEntity::class,
         AuditLogEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class FarmFinanceDatabase : RoomDatabase() {
@@ -29,6 +31,7 @@ abstract class FarmFinanceDatabase : RoomDatabase() {
     abstract fun saleDao(): SaleDao
     abstract fun paymentDao(): PaymentDao
     abstract fun expenseDao(): ExpenseDao
+    abstract fun expensePaymentDao(): ExpensePaymentDao
     abstract fun productionDao(): ProductionDao
     abstract fun auditLogDao(): AuditLogDao
 
@@ -45,7 +48,7 @@ abstract class FarmFinanceDatabase : RoomDatabase() {
                     FarmFinanceDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                 INSTANCE = instance
                 instance

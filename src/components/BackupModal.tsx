@@ -80,20 +80,6 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
     onReload();
   };
 
-  const handleResetBaseline = () => {
-    const confirmReset = window.confirm(
-      'Load sample demo farm data? This populates sample Rice & Copra sales, expenses, and payments for testing.'
-    );
-    if (!confirmReset) return;
-
-    StorageService.resetToDefaultAcceptanceData();
-    setRestoreStatus({
-      success: true,
-      message: 'Sample demo data loaded successfully.'
-    });
-    onReload();
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in duration-150">
@@ -191,7 +177,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
             </div>
           </div>
 
-          {/* Database Reset & Demo Data */}
+          {/* Database Reset */}
           <div className="pt-3 border-t border-slate-200 space-y-2">
             <button
               onClick={handleResetClean}
@@ -199,14 +185,6 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
             >
               <RotateCcw className="w-4 h-4 text-rose-600" />
               Clear All Data (Start Fresh for New User)
-            </button>
-
-            <button
-              onClick={handleResetBaseline}
-              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl font-semibold flex items-center justify-center gap-2 transition text-[11px]"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-              Load Sample Demo Farm Data (Rice & Copra)
             </button>
           </div>
 

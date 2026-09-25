@@ -115,6 +115,19 @@ data class Expense(
         get() = amountIncurred - amountPaid
 }
 
+data class ExpensePayment(
+    val id: String,
+    val expenseId: String,
+    val supplierId: String? = null,
+    val date: String, // YYYY-MM-DD
+    val amount: Money,
+    val paymentMethod: PaymentMethod = PaymentMethod.CASH,
+    val reference: String = "",
+    val notes: String = "",
+    val isVoided: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 data class ProductionCycle(
     val id: String,
     val crop: String,
