@@ -184,6 +184,18 @@ jobs:
           grep -q "android.useAndroidX" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
           grep -q "android.nonTransitiveRClass" gradle.properties || echo "android.nonTransitiveRClass=true" >> gradle.properties
 
+          mkdir -p app/src/main/res/drawable app/src/main/res/mipmap app/src/main/res/mipmap-anydpi-v26
+
+          echo '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#065F46" android:pathData="M0,0h108v108h-108z"/></vector>' > app/src/main/res/drawable/ic_launcher_background.xml
+
+          echo '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#34D399" android:pathData="M54,34c-7.73,0 -14,6.27 -14,14 0,4.42 2.05,8.36 5.25,10.92L45,80h18l-0.25,-21.08c3.2,-2.56 5.25,-6.5 5.25,-10.92 0,-7.73 -6.27,-14 -14,-14z"/></vector>' > app/src/main/res/drawable/ic_launcher_foreground.xml
+
+          ADAPTIVE='<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="@drawable/ic_launcher_background"/><foreground android:drawable="@drawable/ic_launcher_foreground"/></adaptive-icon>'
+          echo "$ADAPTIVE" > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          echo "$ADAPTIVE" > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+          echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher.xml
+          echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher_round.xml
+
           if [ ! -f "gradlew" ]; then
             gradle wrapper --gradle-version 8.7 || true
           fi
