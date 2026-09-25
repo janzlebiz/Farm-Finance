@@ -38,6 +38,15 @@ include(":app")`
 }`
   },
   {
+    path: 'gradle.properties',
+    category: 'Gradle & Config',
+    content: `# Project-wide Gradle settings.
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+android.nonTransitiveRClass=true
+kotlin.code.style=official`
+  },
+  {
     path: 'gradle/libs.versions.toml',
     category: 'Gradle & Config',
     content: `[versions]
@@ -343,6 +352,12 @@ jobs:
           echo "Selected Android Project Directory: $DIR"
 
           cd "$DIR"
+          if [ ! -f "gradle.properties" ]; then
+            touch gradle.properties
+          fi
+          grep -q "android.useAndroidX" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -q "android.nonTransitiveRClass" gradle.properties || echo "android.nonTransitiveRClass=true" >> gradle.properties
+
           if [ ! -f "gradlew" ]; then
             echo "Generating Gradle wrapper..."
             gradle wrapper --gradle-version 8.7 || true

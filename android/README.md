@@ -178,6 +178,12 @@ jobs:
           fi
           echo "PROJECT_DIR=$DIR" >> $GITHUB_OUTPUT
           cd "$DIR"
+          if [ ! -f "gradle.properties" ]; then
+            touch gradle.properties
+          fi
+          grep -q "android.useAndroidX" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -q "android.nonTransitiveRClass" gradle.properties || echo "android.nonTransitiveRClass=true" >> gradle.properties
+
           if [ ! -f "gradlew" ]; then
             gradle wrapper --gradle-version 8.7 || true
           fi

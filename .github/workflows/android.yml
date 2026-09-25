@@ -43,6 +43,13 @@ jobs:
           echo "Selected Android Project Directory: $DIR"
 
           cd "$DIR"
+          # Ensure gradle.properties with AndroidX flags exists
+          if [ ! -f "gradle.properties" ]; then
+            touch gradle.properties
+          fi
+          grep -q "android.useAndroidX" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -q "android.nonTransitiveRClass" gradle.properties || echo "android.nonTransitiveRClass=true" >> gradle.properties
+
           if [ ! -f "gradlew" ]; then
             echo "Generating Gradle wrapper..."
             gradle wrapper --gradle-version 8.7 || true
