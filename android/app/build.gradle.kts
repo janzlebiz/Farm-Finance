@@ -93,6 +93,9 @@ dependencies {
     // Security & Keystore
     implementation(libs.androidx.security.crypto)
 
+    // AndroidX WebKit for standalone offline web runtime
+    implementation(libs.androidx.webkit)
+
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
 

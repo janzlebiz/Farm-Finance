@@ -159,14 +159,23 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Accept Android SDK Licenses
-        run: |
-          yes | sdkmanager --licenses || true
+        run: yes | sdkmanager --licenses || true
 
-      - name: Determine Project Directory & Ensure Gradle Wrapper
+      - name: Build Web Application
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Determine Project Directory & Ensure Assets
         id: prep
         run: |
           if [ -f "android/build.gradle.kts" ]; then
@@ -195,6 +204,13 @@ jobs:
           echo "$ADAPTIVE" > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
           echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher.xml
           echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher_round.xml
+
+          mkdir -p app/src/main/assets/www
+          if [ -d "../dist" ]; then
+            cp -r ../dist/* app/src/main/assets/www/
+          elif [ -d "dist" ]; then
+            cp -r dist/* app/src/main/assets/www/
+          fi
 
           if [ ! -f "gradlew" ]; then
             gradle wrapper --gradle-version 8.7 || true

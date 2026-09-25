@@ -14,8 +14,10 @@ ksp = "2.0.0-1.0.22"
 coroutines = "1.8.1"
 securityCrypto = "1.1.0-alpha06"
 workManager = "2.9.1"
+webkit = "1.11.0"
 
 [libraries]
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

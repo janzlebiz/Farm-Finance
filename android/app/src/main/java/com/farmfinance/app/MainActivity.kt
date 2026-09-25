@@ -1,80 +1,98 @@
 package com.farmfinance.app
 
+import android.annotation.SuppressLint
+import android.graphics.Color
 import android.os.Bundle
+import android.view.ViewGroup
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import com.farmfinance.app.ui.screens.*
-import com.farmfinance.app.ui.theme.FarmFinanceTheme
+import androidx.activity.OnBackPressedCallback
+import androidx.webkit.WebViewAssetLoader
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var webView: WebView
+
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            FarmFinanceTheme {
-                MainAppScaffold()
+
+        // Setup WebViewAssetLoader to securely serve local assets from https://appassets.androidplatform.net/
+        val assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/res/", WebViewAssetLoader.ResourcesPathHandler(this))
+            .build()
+
+        webView = WebView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            setBackgroundColor(Color.parseColor("#1b5e20"))
+
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                databaseEnabled = true
+                allowFileAccess = true
+                allowContentAccess = true
+                useWideViewPort = true
+                loadWithOverviewMode = true
+                setSupportZoom(false)
+                displayZoomControls = false
+                cacheMode = WebSettings.LOAD_DEFAULT
+                mediaPlaybackRequiresUserGesture = false
             }
-        }
-    }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MainAppScaffold() {
-    val navController = rememberNavController()
-    var selectedItem by remember { mutableStateOf(0) }
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): WebResourceResponse? {
+                    return assetLoader.shouldInterceptRequest(request.url)
+                }
 
-    val navItems = listOf(
-        Triple("dashboard", "Dashboard", Icons.Default.Dashboard),
-        Triple("sales", "Sales", Icons.Default.AttachMoney),
-        Triple("expenses", "Expenses", Icons.Default.ReceiptLong),
-        Triple("receivables", "Receivables", Icons.Default.AccountBalanceWallet),
-        Triple("production", "Production", Icons.Default.Agriculture),
-        Triple("reports", "Reports", Icons.Default.Assessment)
-    )
-
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        bottomBar = {
-            NavigationBar {
-                navItems.forEachIndexed { index, item ->
-                    NavigationBarItem(
-                        icon = { Icon(item.third, contentDescription = item.second) },
-                        label = { Text(item.second) },
-                        selected = selectedItem == index,
-                        onClick = {
-                            selectedItem = index
-                            navController.navigate(item.first) {
-                                popUpTo("dashboard") { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
-                    )
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): Boolean {
+                    // Keep app navigation inside WebView
+                    return false
                 }
             }
+
+            webChromeClient = WebChromeClient()
+
+            // Load local bundled web application
+            loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
         }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = "dashboard",
-            modifier = Modifier.padding(innerPadding)
-        ) {
-            composable("dashboard") { DashboardScreen() }
-            composable("sales") { SalesScreen() }
-            composable("expenses") { ExpensesScreen() }
-            composable("receivables") { ReceivablesScreen() }
-            composable("production") { ProductionScreen() }
-            composable("reports") { ReportsScreen() }
+
+        setContentView(webView)
+
+        // Handle native back button navigation
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (::webView.isInitialized && webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+    }
+
+    override fun onDestroy() {
+        if (::webView.isInitialized) {
+            webView.destroy()
         }
+        super.onDestroy()
     }
 }
+

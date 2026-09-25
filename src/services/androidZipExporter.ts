@@ -58,9 +58,11 @@ composeBom = "2024.06.00"
 room = "2.6.1"
 ksp = "2.0.0-1.0.22"
 securityCrypto = "1.1.0-alpha06"
+webkit = "1.11.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
@@ -249,6 +251,101 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
 }`
   },
   {
+    path: 'app/src/main/java/com/farmfinance/app/MainActivity.kt',
+    category: 'Compose UI',
+    content: `package com.farmfinance.app
+
+import android.annotation.SuppressLint
+import android.graphics.Color
+import android.os.Bundle
+import android.view.ViewGroup
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.webkit.WebViewAssetLoader
+
+class MainActivity : ComponentActivity() {
+
+    private lateinit var webView: WebView
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/res/", WebViewAssetLoader.ResourcesPathHandler(this))
+            .build()
+
+        webView = WebView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            setBackgroundColor(Color.parseColor("#1b5e20"))
+
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                databaseEnabled = true
+                allowFileAccess = true
+                allowContentAccess = true
+                useWideViewPort = true
+                loadWithOverviewMode = true
+                setSupportZoom(false)
+                displayZoomControls = false
+                cacheMode = WebSettings.LOAD_DEFAULT
+                mediaPlaybackRequiresUserGesture = false
+            }
+
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): WebResourceResponse? {
+                    return assetLoader.shouldInterceptRequest(request.url)
+                }
+
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): Boolean = false
+            }
+
+            webChromeClient = WebChromeClient()
+
+            loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
+        }
+
+        setContentView(webView)
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (::webView.isInitialized && webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+    }
+
+    override fun onDestroy() {
+        if (::webView.isInitialized) {
+            webView.destroy()
+        }
+        super.onDestroy()
+    }
+}`
+  },
+  {
     path: 'app/src/main/java/com/farmfinance/app/security/KeystoreManager.kt',
     category: 'Security & Repos',
     content: `package com.farmfinance.app.security
@@ -392,14 +489,23 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Accept Android SDK Licenses
-        run: |
-          yes | sdkmanager --licenses || true
+        run: yes | sdkmanager --licenses || true
 
-      - name: Determine Project Directory & Ensure Gradle Wrapper
+      - name: Build Web Application
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Determine Project Directory & Ensure Assets
         id: prep
         run: |
           if [ -f "android/build.gradle.kts" ]; then
@@ -413,12 +519,15 @@ jobs:
           echo "Selected Android Project Directory: $DIR"
 
           cd "$DIR"
+
+          # 1. Ensure gradle.properties with AndroidX flags exists
           if [ ! -f "gradle.properties" ]; then
             touch gradle.properties
           fi
           grep -q "android.useAndroidX" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
           grep -q "android.nonTransitiveRClass" gradle.properties || echo "android.nonTransitiveRClass=true" >> gradle.properties
 
+          # 2. Ensure launcher icon resources exist for AAPT
           mkdir -p app/src/main/res/drawable app/src/main/res/mipmap app/src/main/res/mipmap-anydpi-v26
 
           echo '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#065F46" android:pathData="M0,0h108v108h-108z"/></vector>' > app/src/main/res/drawable/ic_launcher_background.xml
@@ -431,7 +540,18 @@ jobs:
           echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher.xml
           echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher_round.xml
 
+          # 3. Copy compiled web app assets directly into Android app assets
+          mkdir -p app/src/main/assets/www
+          if [ -d "../dist" ]; then
+            cp -r ../dist/* app/src/main/assets/www/
+          elif [ -d "dist" ]; then
+            cp -r dist/* app/src/main/assets/www/
+          fi
+          ls -la app/src/main/assets/www/
+
+          # 4. Ensure Gradle wrapper exists
           if [ ! -f "gradlew" ]; then
+            echo "Generating Gradle wrapper..."
             gradle wrapper --gradle-version 8.7 || true
           fi
           chmod +x gradlew || true
