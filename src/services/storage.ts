@@ -969,6 +969,9 @@ export const StorageService = {
   },
 
   updateCycle(id: string, data: Partial<Omit<ProductionCycle, 'id' | 'createdAt' | 'updatedAt'>>): ProductionCycle {
+    // Authoritative validation
+    const VALID_STATUSES = ['PLANNED', 'ACTIVE', 'HARVESTED', 'COMPLETED', 'CANCELLED', 'ARCHIVED'];
+
     const bridge = getNativeBridge();
     if (bridge) {
       const payload = { id, ...data };
@@ -987,10 +990,42 @@ export const StorageService = {
     if (existingIndex === -1) throw new Error('Production cycle not found');
 
     const current = db.cycles[existingIndex];
+    const crop = (data.crop !== undefined ? data.crop : current.crop)?.trim();
+    if (!crop) throw new Error('Crop cannot be empty');
+
+    const cycleName = (data.cycleName !== undefined ? data.cycleName : current.cycleName)?.trim();
+    if (!cycleName) throw new Error('Cycle name cannot be empty');
+
+    const startDate = (data.startDate !== undefined ? data.startDate : current.startDate)?.trim();
+    if (!startDate) throw new Error('Start date cannot be empty');
+
+    const farmField = (data.farmField !== undefined ? data.farmField : current.farmField)?.trim();
+    if (!farmField) throw new Error('Farm field cannot be empty');
+
+    const area = data.area !== undefined ? data.area : current.area;
+    if (typeof area !== 'number' || isNaN(area) || area <= 0) {
+      throw new Error('Area must be greater than zero');
+    }
+
+    const areaUnit = (data.areaUnit !== undefined ? data.areaUnit : current.areaUnit)?.trim();
+    if (!areaUnit) throw new Error('Area unit cannot be empty');
+
+    const status = (data.status !== undefined ? data.status : current.status)?.trim().toUpperCase() as any;
+    if (!status || !VALID_STATUSES.includes(status)) {
+      throw new Error(`Invalid cycle status: ${data.status}. Must be one of: ${VALID_STATUSES.join(', ')}`);
+    }
+
     const now = new Date().toISOString();
     const updated: ProductionCycle = {
       ...current,
       ...data,
+      crop,
+      cycleName,
+      startDate,
+      farmField,
+      area,
+      areaUnit,
+      status,
       id: current.id, // Preserved
       createdAt: current.createdAt, // Preserved
       updatedAt: now
@@ -1056,9 +1091,37 @@ export const StorageService = {
     if (existingIndex === -1) throw new Error('Harvest not found');
 
     const current = db.harvests[existingIndex];
+
+    const quantity = data.quantity !== undefined ? data.quantity : current.quantity;
+    if (typeof quantity !== 'number' || isNaN(quantity) || quantity <= 0) {
+      throw new Error('Harvest quantity must be greater than zero');
+    }
+
+    const date = (data.date !== undefined ? data.date : current.date)?.trim();
+    if (!date) throw new Error('Harvest date cannot be empty');
+
+    const unit = (data.unit !== undefined ? data.unit : current.unit)?.trim();
+    if (!unit) throw new Error('Harvest unit cannot be empty');
+
+    const targetCycleId = data.cycleId || current.cycleId;
+    const referencedCycle = db.cycles.find((c) => c.id === targetCycleId);
+    if (!referencedCycle) {
+      throw new Error(`Referenced production cycle ${targetCycleId} does not exist`);
+    }
+
+    const requestedCrop = (data.crop || referencedCycle.crop)?.trim();
+    if (requestedCrop.toLowerCase() !== referencedCycle.crop.toLowerCase()) {
+      throw new Error(`Harvest crop (${requestedCrop}) does not match the referenced production cycle crop (${referencedCycle.crop})`);
+    }
+
     const updated: Harvest = {
       ...current,
       ...data,
+      cycleId: targetCycleId,
+      crop: referencedCycle.crop, // ensure exact canonical crop from referenced cycle
+      date,
+      quantity,
+      unit,
       id: current.id, // Preserved
       createdAt: current.createdAt // Preserved
     };

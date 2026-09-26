@@ -1102,6 +1102,179 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(!!updateLog, 'UPDATE event must be recorded in audit log');
     });
 
+    await executeTest('Record Correction', 'Validation: updateCycle rejects empty fields, zero/negative area, and invalid status', () => {
+      StorageService.resetToCleanState();
+      const cycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Valid Cycle',
+        startDate: '2026-04-01',
+        farmField: 'North Field',
+        area: 2.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+
+      // 1. Empty crop
+      let threw = false;
+      try {
+        StorageService.updateCycle(cycle.id, { crop: '   ' });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Crop cannot be empty'), 'Must reject empty crop');
+      }
+      assert(threw, 'Must throw on empty crop');
+
+      // 2. Empty cycleName
+      threw = false;
+      try {
+        StorageService.updateCycle(cycle.id, { cycleName: '' });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Cycle name cannot be empty'), 'Must reject empty cycleName');
+      }
+      assert(threw, 'Must throw on empty cycleName');
+
+      // 3. Empty startDate
+      threw = false;
+      try {
+        StorageService.updateCycle(cycle.id, { startDate: '  ' });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Start date cannot be empty'), 'Must reject empty startDate');
+      }
+      assert(threw, 'Must throw on empty startDate');
+
+      // 4. Empty farmField
+      threw = false;
+      try {
+        StorageService.updateCycle(cycle.id, { farmField: '' });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Farm field cannot be empty'), 'Must reject empty farmField');
+      }
+      assert(threw, 'Must throw on empty farmField');
+
+      // 5. Zero or negative area
+      threw = false;
+      try {
+        StorageService.updateCycle(cycle.id, { area: 0 });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Area must be greater than zero'), 'Must reject area <= 0');
+      }
+      assert(threw, 'Must throw on area = 0');
+
+      threw = false;
+      try {
+        StorageService.updateCycle(cycle.id, { area: -1.5 });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Area must be greater than zero'), 'Must reject negative area');
+      }
+      assert(threw, 'Must throw on negative area');
+
+      // 6. Empty areaUnit
+      threw = false;
+      try {
+        StorageService.updateCycle(cycle.id, { areaUnit: '' });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Area unit cannot be empty'), 'Must reject empty areaUnit');
+      }
+      assert(threw, 'Must throw on empty areaUnit');
+
+      // 7. Invalid status
+      threw = false;
+      try {
+        StorageService.updateCycle(cycle.id, { status: 'UNKNOWN_STATUS' as any });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Invalid cycle status'), 'Must reject invalid status');
+      }
+      assert(threw, 'Must throw on invalid cycle status');
+    });
+
+    await executeTest('Record Correction', 'Validation: updateHarvest rejects quantity <= 0, empty date/unit, missing cycle & mismatched crop', () => {
+      StorageService.resetToCleanState();
+      const riceCycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Palay Season 1',
+        startDate: '2026-05-01',
+        farmField: 'Paddy 1',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+
+      const harvest = StorageService.createHarvest({
+        cycleId: riceCycle.id,
+        crop: 'Rice',
+        date: '2026-09-01',
+        quantity: 500,
+        unit: 'kg'
+      });
+
+      // 1. Quantity <= 0
+      let threw = false;
+      try {
+        StorageService.updateHarvest(harvest.id, { quantity: 0 });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Harvest quantity must be greater than zero'), 'Must reject quantity <= 0');
+      }
+      assert(threw, 'Must throw on quantity = 0');
+
+      threw = false;
+      try {
+        StorageService.updateHarvest(harvest.id, { quantity: -50 });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Harvest quantity must be greater than zero'), 'Must reject negative quantity');
+      }
+      assert(threw, 'Must throw on negative quantity');
+
+      // 2. Empty date
+      threw = false;
+      try {
+        StorageService.updateHarvest(harvest.id, { date: '   ' });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Harvest date cannot be empty'), 'Must reject empty date');
+      }
+      assert(threw, 'Must throw on empty date');
+
+      // 3. Empty unit
+      threw = false;
+      try {
+        StorageService.updateHarvest(harvest.id, { unit: '' });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Harvest unit cannot be empty'), 'Must reject empty unit');
+      }
+      assert(threw, 'Must throw on empty unit');
+
+      // 4. Non-existent cycle
+      threw = false;
+      try {
+        StorageService.updateHarvest(harvest.id, { cycleId: 'non-existent-cycle-999' });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('does not exist'), 'Must reject non-existent cycle ID');
+      }
+      assert(threw, 'Must throw on missing cycle');
+
+      // 5. Crop mismatch with referenced cycle
+      threw = false;
+      try {
+        StorageService.updateHarvest(harvest.id, { crop: 'Copra' });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('does not match the referenced production cycle crop'), 'Must reject crop mismatch');
+      }
+      assert(threw, 'Must throw on crop mismatch');
+    });
+
+
 
   } finally {
     // Restore original user database state

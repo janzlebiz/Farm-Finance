@@ -620,17 +620,38 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         actualHarvestDate: String? = null,
         notes: String = ""
     ): Result<ProductionCycle> {
+        val cleanCrop = crop.trim()
+        if (cleanCrop.isBlank()) return Result.failure(IllegalArgumentException("Crop cannot be empty"))
+
+        val cleanCycleName = cycleName.trim()
+        if (cleanCycleName.isBlank()) return Result.failure(IllegalArgumentException("Cycle name cannot be empty"))
+
+        val cleanStartDate = startDate.trim()
+        if (cleanStartDate.isBlank()) return Result.failure(IllegalArgumentException("Start date cannot be empty"))
+
+        val cleanFarmField = farmField.trim()
+        if (cleanFarmField.isBlank()) return Result.failure(IllegalArgumentException("Farm field cannot be empty"))
+
+        if (area <= 0.0) return Result.failure(IllegalArgumentException("Area must be greater than zero"))
+
+        val cleanAreaUnit = areaUnit.trim()
+        if (cleanAreaUnit.isBlank()) return Result.failure(IllegalArgumentException("Area unit cannot be empty"))
+
+        val cleanStatus = status.trim().uppercase()
+        val isValidStatus = CycleStatus.values().any { it.name == cleanStatus }
+        if (!isValidStatus) return Result.failure(IllegalArgumentException("Invalid cycle status: $status. Must be one of: ${CycleStatus.values().joinToString { it.name }}"))
+
         val existing = db.productionDao().getCycleById(id)
             ?: return Result.failure(IllegalArgumentException("Production cycle not found"))
         val now = System.currentTimeMillis()
         val updated = existing.copy(
-            crop = crop,
-            cycleName = cycleName.trim(),
-            startDate = startDate,
-            farmField = farmField.trim(),
+            crop = cleanCrop,
+            cycleName = cleanCycleName,
+            startDate = cleanStartDate,
+            farmField = cleanFarmField,
             area = area,
-            areaUnit = areaUnit,
-            status = status,
+            areaUnit = cleanAreaUnit,
+            status = cleanStatus,
             expectedHarvestDate = expectedHarvestDate,
             actualHarvestDate = actualHarvestDate,
             notes = notes.trim(),
@@ -645,7 +666,7 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
                     entityType = "CYCLE",
                     entityId = id,
                     eventType = "UPDATE",
-                    summary = "Updated production cycle \"${updated.cycleName}\" ($crop)",
+                    summary = "Updated production cycle \"${updated.cycleName}\" ($cleanCrop)",
                     metadataJson = "{\"cycleId\": \"$id\"}",
                     appVersion = "1.0.0"
                 )
@@ -714,15 +735,33 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         buyerId: String? = null,
         notes: String = ""
     ): Result<Harvest> {
+        if (quantity <= 0.0) return Result.failure(IllegalArgumentException("Harvest quantity must be greater than zero"))
+
+        val cleanDate = date.trim()
+        if (cleanDate.isBlank()) return Result.failure(IllegalArgumentException("Harvest date cannot be empty"))
+
+        val cleanUnit = unit.trim()
+        if (cleanUnit.isBlank()) return Result.failure(IllegalArgumentException("Harvest unit cannot be empty"))
+
+        val cleanCrop = crop.trim()
+        if (cleanCrop.isBlank()) return Result.failure(IllegalArgumentException("Harvest crop cannot be empty"))
+
+        val referencedCycle = db.productionDao().getCycleById(cycleId)
+            ?: return Result.failure(IllegalArgumentException("Referenced production cycle $cycleId does not exist"))
+
+        if (!cleanCrop.equals(referencedCycle.crop, ignoreCase = true)) {
+            return Result.failure(IllegalArgumentException("Harvest crop ($cleanCrop) does not match the referenced production cycle crop (${referencedCycle.crop})"))
+        }
+
         val existing = db.productionDao().getHarvestById(id)
             ?: return Result.failure(IllegalArgumentException("Harvest not found"))
         val now = System.currentTimeMillis()
         val updated = existing.copy(
             cycleId = cycleId,
-            crop = crop,
-            date = date,
+            crop = referencedCycle.crop, // ensure exact canonical crop from referenced cycle
+            date = cleanDate,
             quantity = quantity,
-            unit = unit,
+            unit = cleanUnit,
             gradeQuality = gradeQuality.trim(),
             sellingPriceCentavos = sellingPrice?.centavos,
             buyerId = buyerId,
@@ -737,7 +776,7 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
                     entityType = "HARVEST",
                     entityId = id,
                     eventType = "UPDATE",
-                    summary = "Updated harvest details: $quantity $unit of $crop",
+                    summary = "Updated harvest details: $quantity $cleanUnit of ${referencedCycle.crop}",
                     metadataJson = "{\"harvestId\": \"$id\", \"cycleId\": \"$cycleId\"}",
                     appVersion = "1.0.0"
                 )
