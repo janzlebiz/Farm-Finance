@@ -862,6 +862,44 @@ export const StorageService = {
     });
   },
 
+  pickNativeBackupFile(): Promise<{ success: boolean; content?: string; cancelled?: boolean; message?: string }> {
+    return new Promise((resolve) => {
+      const bridge = getNativeBridge();
+      if (!bridge || typeof bridge.requestRestoreBackup !== 'function') {
+        resolve({ success: false, message: 'Native restore service is not available.' });
+        return;
+      }
+
+      const handler = (event: any) => {
+        window.removeEventListener('farm-finance-restore-file-selected', handler);
+        window.removeEventListener('farm-finance-restore-result', handler);
+        const detail = event.detail;
+        if (detail?.cancelled) {
+          resolve({ success: false, cancelled: true, message: 'Restore was cancelled.' });
+        } else if (detail?.success && detail?.content) {
+          resolve({ success: true, content: detail.content, message: 'File selected successfully.' });
+        } else {
+          resolve({ success: false, message: detail?.message || 'Failed to select backup file.' });
+        }
+      };
+
+      window.addEventListener('farm-finance-restore-file-selected', handler);
+      window.addEventListener('farm-finance-restore-result', handler);
+      try {
+        const launched = bridge.requestRestoreBackup();
+        if (!launched) {
+          window.removeEventListener('farm-finance-restore-file-selected', handler);
+          window.removeEventListener('farm-finance-restore-result', handler);
+          resolve({ success: false, message: 'Could not launch native document picker.' });
+        }
+      } catch (e: any) {
+        window.removeEventListener('farm-finance-restore-file-selected', handler);
+        window.removeEventListener('farm-finance-restore-result', handler);
+        resolve({ success: false, message: e.message || 'Restore request failed.' });
+      }
+    });
+  },
+
   restoreNativeBackup(): Promise<{ success: boolean; message: string; cancelled?: boolean }> {
     return new Promise((resolve) => {
       const bridge = getNativeBridge();

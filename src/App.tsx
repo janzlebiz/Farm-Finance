@@ -399,20 +399,6 @@ export default function App() {
               <button
                 onClick={() => {
                   setIsMoreMenuOpen(false);
-                  setIsInstallModalOpen(true);
-                }}
-                className="w-full text-left p-3 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 text-emerald-950 font-bold flex items-center justify-between transition border border-emerald-300"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Smartphone className="w-4 h-4 text-emerald-700" />
-                  <span>Install on Phone (Android / iOS / APK)</span>
-                </div>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-200 text-emerald-900 font-bold">Mobile App</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsMoreMenuOpen(false);
                   setIsContactsOpen(true);
                 }}
                 className="w-full text-left p-3 rounded-xl hover:bg-slate-50 text-slate-800 font-semibold flex items-center justify-between transition border border-slate-200"

@@ -87,28 +87,19 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
                         inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                     } ?: throw IllegalStateException("Could not read selected backup file.")
 
-                    val restoreResultJson = nativeBridge.restoreBackup(backupJson)
-                    val resultObj = JSONObject(restoreResultJson)
-                    val success = resultObj.optBoolean("success", false)
-                    val message = if (success) {
-                        resultObj.optString("message", "Database successfully restored.")
-                    } else {
-                        resultObj.optString("error", "Restore failed: Invalid or altered backup file.")
-                    }
-
                     dispatchWebEvent(
-                        "farm-finance-restore-result",
+                        "farm-finance-restore-file-selected",
                         JSONObject().apply {
-                            put("success", success)
-                            put("message", message)
+                            put("success", true)
+                            put("content", backupJson)
                         }
                     )
                 } catch (e: Exception) {
                     dispatchWebEvent(
-                        "farm-finance-restore-result",
+                        "farm-finance-restore-file-selected",
                         JSONObject().apply {
                             put("success", false)
-                            put("message", "Restore failed: ${e.message ?: "Invalid file."}")
+                            put("message", "Could not read file: ${e.message ?: "Invalid file."}")
                         }
                     )
                 }
@@ -116,7 +107,7 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
         } else {
             // User cancelled
             dispatchWebEvent(
-                "farm-finance-restore-result",
+                "farm-finance-restore-file-selected",
                 JSONObject().apply {
                     put("success", false)
                     put("cancelled", true)
