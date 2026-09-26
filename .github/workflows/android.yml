@@ -95,18 +95,32 @@ jobs:
         id: keystore
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
         run: |
-          if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
-            KEYSTORE_DIR="${{ runner.temp }}/keystore"
-            mkdir -p "$KEYSTORE_DIR"
-            echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_DIR/release.keystore"
-            echo "RELEASE_KEYSTORE_PATH=$KEYSTORE_DIR/release.keystore" >> $GITHUB_ENV
-            echo "SIGNING_CONFIGURED=true" >> $GITHUB_ENV
-            echo "Release keystore decoded successfully to secure runner temporary storage."
-          else
-            echo "SIGNING_CONFIGURED=false" >> $GITHUB_ENV
-            echo "No RELEASE_KEYSTORE_BASE64 secret provided; proceeding with unsigned release build."
+          # Strictly require release signing credentials in CI
+          MISSING_SECRETS=()
+          [ -z "$RELEASE_KEYSTORE_BASE64" ] && MISSING_SECRETS+=("RELEASE_KEYSTORE_BASE64")
+          [ -z "$RELEASE_KEYSTORE_PASSWORD" ] && MISSING_SECRETS+=("RELEASE_KEYSTORE_PASSWORD")
+          [ -z "$RELEASE_KEY_ALIAS" ] && MISSING_SECRETS+=("RELEASE_KEY_ALIAS")
+
+          if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
+            echo "::error::Mandatory release signing secrets are missing: ${MISSING_SECRETS[*]}"
+            echo "::error::CI cannot produce an unsigned release APK. Please configure the required repository secrets."
+            exit 1
           fi
+
+          KEYSTORE_DIR="${{ runner.temp }}/keystore"
+          mkdir -p "$KEYSTORE_DIR"
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_DIR/release.keystore"
+
+          if [ ! -s "$KEYSTORE_DIR/release.keystore" ]; then
+            echo "::error::Decoded release keystore file is empty or corrupted."
+            exit 1
+          fi
+
+          echo "RELEASE_KEYSTORE_PATH=$KEYSTORE_DIR/release.keystore" >> $GITHUB_ENV
+          echo "Release keystore decoded successfully to secure runner temporary storage."
 
       - name: Build Standalone Release APK
         env:
@@ -118,7 +132,7 @@ jobs:
           cd "${{ steps.prep.outputs.PROJECT_DIR }}"
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Prepare APK Output & Verify Signature
+      - name: Prepare APK Output
         id: output
         run: |
           mkdir -p build_outputs
@@ -130,12 +144,18 @@ jobs:
           cp "$APK_FILE" build_outputs/FarmFinance-v1.0.apk
           ls -lh build_outputs/
 
-          # Verify signature if apksigner is available in Android SDK
-          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" -name apksigner 2>/dev/null | sort -V | tail -n 1)
-          if [ -n "$APKSIGNER" ] && [ -x "$APKSIGNER" ]; then
-            echo "--- APK Signature Verification ---"
-            "$APKSIGNER" verify --verbose build_outputs/FarmFinance-v1.0.apk || true
+      - name: Mandatory APK Signature Verification
+        run: |
+          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            APKSIGNER=$(command -v apksigner || true)
           fi
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner tool not found in Android SDK build-tools."
+            exit 1
+          fi
+          echo "Verifying APK release signature using: $APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs build_outputs/FarmFinance-v1.0.apk
 
       - name: Upload Standalone APK Artifact
         uses: actions/upload-artifact@v4
