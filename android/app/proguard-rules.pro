@@ -10,6 +10,15 @@
 
 # Keep Keystore & Security Crypto classes
 -keep class androidx.security.crypto.** { *; }
+-keep class com.google.crypto.tink.** { *; }
+
+# Suppress missing classes warnings for annotations referenced by Tink and standard libraries
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
+-dontwarn javax.annotation.concurrent.**
+-dontwarn org.checkerframework.**
+-dontwarn org.codehaus.mojo.animal_sniffer.**
+-dontwarn com.google.crypto.tink.**
 
 # Keep JavaScript Interface for WebView Bridge
 -keepclassmembers class * {

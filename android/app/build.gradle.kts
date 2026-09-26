@@ -107,6 +107,8 @@ dependencies {
 
     // Security & Keystore
     implementation(libs.androidx.security.crypto)
+    compileOnly("com.google.code.findbugs:jsr305:3.0.2")
+    compileOnly("com.google.errorprone:error_prone_annotations:2.28.0")
 
     // AndroidX WebKit for standalone offline web runtime
     implementation(libs.androidx.webkit)
