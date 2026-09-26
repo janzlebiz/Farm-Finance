@@ -17,8 +17,35 @@ interface BackupModalProps {
 
 export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) => {
   const [restoreStatus, setRestoreStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleDownloadBackup = () => {
+  const handleDownloadBackup = async () => {
+    if (StorageService.isNativeAndroid()) {
+      setIsProcessing(true);
+      try {
+        const res = await StorageService.exportNativeBackup();
+        if (!res.cancelled) {
+          setRestoreStatus({
+            success: res.success,
+            message: res.message
+          });
+        } else {
+          setRestoreStatus({
+            success: false,
+            message: 'Backup export was cancelled.'
+          });
+        }
+      } catch (err: any) {
+        setRestoreStatus({
+          success: false,
+          message: err.message || 'Export backup failed.'
+        });
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
     const json = StorageService.exportBackupJson();
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -29,6 +56,43 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    setRestoreStatus({
+      success: true,
+      message: 'Backup JSON downloaded successfully.'
+    });
+  };
+
+  const handleNativeRestore = async () => {
+    const confirmRestore = window.confirm(
+      'Warning: Restoring will overwrite existing local data. Do you wish to continue?'
+    );
+    if (!confirmRestore) return;
+
+    setIsProcessing(true);
+    try {
+      const res = await StorageService.restoreNativeBackup();
+      if (!res.cancelled) {
+        setRestoreStatus({
+          success: res.success,
+          message: res.message
+        });
+        if (res.success) {
+          onReload();
+        }
+      } else {
+        setRestoreStatus({
+          success: false,
+          message: 'Restore was cancelled.'
+        });
+      }
+    } catch (err: any) {
+      setRestoreStatus({
+        success: false,
+        message: err.message || 'Restore failed.'
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDownloadCsv = (dataset: any) => {
@@ -126,22 +190,34 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
             <div className="flex gap-2">
               <button
                 onClick={handleDownloadBackup}
-                className="flex-1 py-2 px-3 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl font-bold flex items-center justify-center gap-1.5 transition"
+                disabled={isProcessing}
+                className="flex-1 py-2 px-3 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-1.5 transition"
               >
                 <Download className="w-4 h-4" />
-                Export Backup JSON
+                {isProcessing ? 'Processing...' : 'Export Backup JSON'}
               </button>
 
-              <label className="flex-1 py-2 px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-xl font-bold flex items-center justify-center gap-1.5 cursor-pointer transition">
-                <Upload className="w-4 h-4" />
-                Restore Backup
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleFileRestore}
-                  className="hidden"
-                />
-              </label>
+              {StorageService.isNativeAndroid() ? (
+                <button
+                  onClick={handleNativeRestore}
+                  disabled={isProcessing}
+                  className="flex-1 py-2 px-3 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-50 text-slate-800 rounded-xl font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <Upload className="w-4 h-4" />
+                  {isProcessing ? 'Processing...' : 'Restore Backup'}
+                </button>
+              ) : (
+                <label className="flex-1 py-2 px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-xl font-bold flex items-center justify-center gap-1.5 cursor-pointer transition">
+                  <Upload className="w-4 h-4" />
+                  Restore Backup
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleFileRestore}
+                    className="hidden"
+                  />
+                </label>
+              )}
             </div>
           </div>
 

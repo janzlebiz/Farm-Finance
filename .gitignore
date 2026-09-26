@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+*.keystore
+*.jks
+*.b64
+build_outputs/
+android/.gradle/
+android/app/build/

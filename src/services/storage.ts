@@ -847,6 +847,60 @@ export const StorageService = {
   },
 
   // =================== CRYPTOGRAPHIC BACKUP & RESTORE ===================
+  exportNativeBackup(): Promise<{ success: boolean; message: string; cancelled?: boolean }> {
+    return new Promise((resolve) => {
+      const bridge = getNativeBridge();
+      if (!bridge || typeof bridge.requestExportBackup !== 'function') {
+        resolve({ success: false, message: 'Native backup service is not available.' });
+        return;
+      }
+
+      const handler = (event: any) => {
+        window.removeEventListener('farm-finance-backup-result', handler);
+        resolve(event.detail || { success: false, message: 'No response received from backup service.' });
+      };
+
+      window.addEventListener('farm-finance-backup-result', handler);
+      try {
+        const launched = bridge.requestExportBackup();
+        if (!launched) {
+          window.removeEventListener('farm-finance-backup-result', handler);
+          resolve({ success: false, message: 'Could not launch native document creator.' });
+        }
+      } catch (e: any) {
+        window.removeEventListener('farm-finance-backup-result', handler);
+        resolve({ success: false, message: e.message || 'Export request failed.' });
+      }
+    });
+  },
+
+  restoreNativeBackup(): Promise<{ success: boolean; message: string; cancelled?: boolean }> {
+    return new Promise((resolve) => {
+      const bridge = getNativeBridge();
+      if (!bridge || typeof bridge.requestRestoreBackup !== 'function') {
+        resolve({ success: false, message: 'Native restore service is not available.' });
+        return;
+      }
+
+      const handler = (event: any) => {
+        window.removeEventListener('farm-finance-restore-result', handler);
+        resolve(event.detail || { success: false, message: 'No response received from restore service.' });
+      };
+
+      window.addEventListener('farm-finance-restore-result', handler);
+      try {
+        const launched = bridge.requestRestoreBackup();
+        if (!launched) {
+          window.removeEventListener('farm-finance-restore-result', handler);
+          resolve({ success: false, message: 'Could not launch native document picker.' });
+        }
+      } catch (e: any) {
+        window.removeEventListener('farm-finance-restore-result', handler);
+        resolve({ success: false, message: e.message || 'Restore request failed.' });
+      }
+    });
+  },
+
   exportBackupJson(): string {
     const bridge = getNativeBridge();
     if (bridge) {

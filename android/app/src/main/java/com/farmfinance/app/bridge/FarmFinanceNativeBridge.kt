@@ -30,8 +30,31 @@ class FarmFinanceNativeBridge(
     private val context: Context
 ) {
 
+    interface BackupRestoreHandler {
+        fun launchExportBackup(suggestedFileName: String)
+        fun launchRestoreBackup()
+    }
+
+    var backupRestoreHandler: BackupRestoreHandler? = null
+
     @JavascriptInterface
     fun isAvailable(): Boolean = true
+
+    @JavascriptInterface
+    fun requestExportBackup(): Boolean {
+        val now = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val suggestedFileName = "farm-finance-backup-$now.json"
+        val handler = backupRestoreHandler ?: return false
+        handler.launchExportBackup(suggestedFileName)
+        return true
+    }
+
+    @JavascriptInterface
+    fun requestRestoreBackup(): Boolean {
+        val handler = backupRestoreHandler ?: return false
+        handler.launchRestoreBackup()
+        return true
+    }
 
     @JavascriptInterface
     fun getDatabaseState(): String = runBlocking {
