@@ -621,6 +621,139 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
+    fun updateBuyer(jsonStr: String): String = runBlocking(Dispatchers.IO) {
+        try {
+            val json = JSONObject(jsonStr)
+            val id = json.getString("id")
+            val name = json.getString("name")
+            val contact = json.optString("contactNumber", "")
+            val address = json.optString("address", "")
+            val notes = json.optString("notes", "")
+            val status = json.optString("status", "ACTIVE")
+
+            val result = repository.updateBuyer(id, name, contact, address, notes, status)
+            if (result.isSuccess) {
+                JSONObject().apply {
+                    put("success", true)
+                    put("buyerId", id)
+                }.toString()
+            } else {
+                JSONObject().apply {
+                    put("success", false)
+                    put("error", result.exceptionOrNull()?.message ?: "Failed to update buyer")
+                }.toString()
+            }
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Invalid update buyer payload")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun updateSupplier(jsonStr: String): String = runBlocking(Dispatchers.IO) {
+        try {
+            val json = JSONObject(jsonStr)
+            val id = json.getString("id")
+            val name = json.getString("name")
+            val contact = json.optString("contactNumber", "")
+            val address = json.optString("address", "")
+            val notes = json.optString("notes", "")
+            val status = json.optString("status", "ACTIVE")
+
+            val result = repository.updateSupplier(id, name, contact, address, notes, status)
+            if (result.isSuccess) {
+                JSONObject().apply {
+                    put("success", true)
+                    put("supplierId", id)
+                }.toString()
+            } else {
+                JSONObject().apply {
+                    put("success", false)
+                    put("error", result.exceptionOrNull()?.message ?: "Failed to update supplier")
+                }.toString()
+            }
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Invalid update supplier payload")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun updateCycle(jsonStr: String): String = runBlocking(Dispatchers.IO) {
+        try {
+            val json = JSONObject(jsonStr)
+            val id = json.getString("id")
+            val crop = json.getString("crop")
+            val cycleName = json.getString("cycleName")
+            val startDate = json.getString("startDate")
+            val farmField = json.getString("farmField")
+            val area = json.getDouble("area")
+            val areaUnit = json.getString("areaUnit")
+            val status = json.optString("status", "ACTIVE")
+            val expectedHarvestDate = if (json.has("expectedHarvestDate") && !json.isNull("expectedHarvestDate")) json.getString("expectedHarvestDate") else null
+            val actualHarvestDate = if (json.has("actualHarvestDate") && !json.isNull("actualHarvestDate")) json.getString("actualHarvestDate") else null
+            val notes = json.optString("notes", "")
+
+            val result = repository.updateCycle(id, crop, cycleName, startDate, farmField, area, areaUnit, status, expectedHarvestDate, actualHarvestDate, notes)
+            if (result.isSuccess) {
+                JSONObject().apply {
+                    put("success", true)
+                    put("cycleId", id)
+                }.toString()
+            } else {
+                JSONObject().apply {
+                    put("success", false)
+                    put("error", result.exceptionOrNull()?.message ?: "Failed to update cycle")
+                }.toString()
+            }
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Invalid update cycle payload")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun updateHarvest(jsonStr: String): String = runBlocking(Dispatchers.IO) {
+        try {
+            val json = JSONObject(jsonStr)
+            val id = json.getString("id")
+            val cycleId = json.getString("cycleId")
+            val crop = json.getString("crop")
+            val date = json.getString("date")
+            val quantity = json.getDouble("quantity")
+            val unit = json.getString("unit")
+            val gradeQuality = json.optString("gradeQuality", "")
+            val sellingPrice = if (json.has("sellingPriceCentavos") && !json.isNull("sellingPriceCentavos")) Money(json.getLong("sellingPriceCentavos")) else null
+            val buyerId = if (json.has("buyerId") && !json.isNull("buyerId")) json.getString("buyerId") else null
+            val notes = json.optString("notes", "")
+
+            val result = repository.updateHarvest(id, cycleId, crop, date, quantity, unit, gradeQuality, sellingPrice, buyerId, notes)
+            if (result.isSuccess) {
+                JSONObject().apply {
+                    put("success", true)
+                    put("harvestId", id)
+                }.toString()
+            } else {
+                JSONObject().apply {
+                    put("success", false)
+                    put("error", result.exceptionOrNull()?.message ?: "Failed to update harvest")
+                }.toString()
+            }
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Invalid update harvest payload")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
     fun exportBackup(): String = runBlocking(Dispatchers.IO) {
         try {
             val stateJsonStr = getDatabaseState()

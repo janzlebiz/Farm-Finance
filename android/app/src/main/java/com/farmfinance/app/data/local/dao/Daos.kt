@@ -180,6 +180,12 @@ interface ProductionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAllCycles(cycles: List<ProductionCycleEntity>)
 
+    @Update
+    suspend fun updateCycle(cycle: ProductionCycleEntity)
+
+    @Query("SELECT * FROM production_cycles WHERE id = :id")
+    suspend fun getCycleById(id: String): ProductionCycleEntity?
+
     @Query("DELETE FROM production_cycles")
     suspend fun deleteAllCycles()
 
@@ -189,11 +195,17 @@ interface ProductionDao {
     @Query("SELECT * FROM harvests ORDER BY date DESC")
     suspend fun getAllHarvestsSync(): List<HarvestEntity>
 
+    @Query("SELECT * FROM harvests WHERE id = :id")
+    suspend fun getHarvestById(id: String): HarvestEntity?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertHarvest(harvest: HarvestEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAllHarvests(harvests: List<HarvestEntity>)
+
+    @Update
+    suspend fun updateHarvest(harvest: HarvestEntity)
 
     @Query("DELETE FROM harvests")
     suspend fun deleteAllHarvests()

@@ -962,6 +962,147 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(dbAfter.expenses.length === dbBefore.expenses.length, 'Expenses must remain completely unchanged');
     });
 
+    // ----------------------------------------------------
+    // SUITE: RECORD CORRECTION WORKFLOW (@6.3)
+    // ----------------------------------------------------
+    await executeTest('Record Correction', 'Buyer: Edit details -> Preserves ID/createdAt & logs UPDATE audit', () => {
+      StorageService.resetToCleanState();
+      const original = StorageService.createBuyer({
+        name: 'Initial Trader Corp',
+        contactNumber: '09123456789',
+        address: 'Old Warehouse Ave',
+        notes: 'Cash on Delivery',
+        status: 'ACTIVE'
+      });
+
+      const updated = StorageService.updateBuyer(original.id, {
+        name: 'Updated Grain Solutions Corp',
+        contactNumber: '09998887777',
+        address: 'New Grain Terminal, Pier 4',
+        notes: 'PDC 15 days',
+        status: 'ACTIVE'
+      });
+
+      assert(updated.id === original.id, 'Buyer ID must be strictly preserved upon edit');
+      assert(updated.createdDate === original.createdDate, 'Buyer createdDate must be strictly preserved');
+      assert(updated.name === 'Updated Grain Solutions Corp', 'Buyer name must be updated');
+      assert(updated.contactNumber === '09998887777', 'Buyer contactNumber must be updated');
+      assert(updated.address === 'New Grain Terminal, Pier 4', 'Buyer address must be updated');
+
+      const reloaded = StorageService.getBuyers().find((b) => b.id === original.id);
+      assert(reloaded?.name === 'Updated Grain Solutions Corp', 'Authoritative state must reflect update');
+
+      const logs = StorageService.getAuditLogs();
+      const updateLog = logs.find((l) => l.entityType === 'BUYER' && l.entityId === original.id && l.eventType === 'UPDATE');
+      assert(!!updateLog, 'UPDATE event must be recorded in audit log');
+    });
+
+    await executeTest('Record Correction', 'Supplier: Edit details -> Preserves ID/createdAt & logs UPDATE audit', () => {
+      StorageService.resetToCleanState();
+      const original = StorageService.createSupplier({
+        name: 'Farm Fertilizers Inc',
+        contactNumber: '09223334444',
+        address: 'Station 1',
+        notes: '50kg sacks',
+        status: 'ACTIVE'
+      });
+
+      const updated = StorageService.updateSupplier(original.id, {
+        name: 'Agri-Chem Solutions & Co.',
+        contactNumber: '09887776655',
+        address: 'Main Highway Km 24',
+        notes: 'Bulk discount applied',
+        status: 'ACTIVE'
+      });
+
+      assert(updated.id === original.id, 'Supplier ID must be strictly preserved upon edit');
+      assert(updated.createdDate === original.createdDate, 'Supplier createdDate must be strictly preserved');
+      assert(updated.name === 'Agri-Chem Solutions & Co.', 'Supplier name must be updated');
+
+      const logs = StorageService.getAuditLogs();
+      const updateLog = logs.find((l) => l.entityType === 'SUPPLIER' && l.entityId === original.id && l.eventType === 'UPDATE');
+      assert(!!updateLog, 'UPDATE event must be recorded in audit log');
+    });
+
+    await executeTest('Record Correction', 'Production Cycle: Edit details -> Preserves ID/createdAt & logs UPDATE audit', () => {
+      StorageService.resetToCleanState();
+      const original = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Dry Season 2026',
+        startDate: '2026-01-15',
+        farmField: 'Paddy Alpha',
+        area: 2.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+
+      const updated = StorageService.updateCycle(original.id, {
+        crop: 'Rice',
+        cycleName: 'Dry Season 2026 - Extended',
+        startDate: '2026-01-20',
+        farmField: 'Paddy Alpha & Beta',
+        area: 3.5,
+        areaUnit: 'ha',
+        status: 'ACTIVE',
+        notes: 'Irrigation repaired'
+      });
+
+      assert(updated.id === original.id, 'Cycle ID must be strictly preserved');
+      assert(updated.createdAt === original.createdAt, 'Cycle createdAt must be strictly preserved');
+      assert(updated.cycleName === 'Dry Season 2026 - Extended', 'Cycle name must be updated');
+      assert(updated.area === 3.5, 'Cycle area must be updated');
+
+      const logs = StorageService.getAuditLogs();
+      const updateLog = logs.find((l) => l.entityType === 'CYCLE' && l.entityId === original.id && l.eventType === 'UPDATE');
+      assert(!!updateLog, 'UPDATE event must be recorded in audit log');
+    });
+
+    await executeTest('Record Correction', 'Harvest: Edit details -> Preserves ID/createdAt & logs UPDATE audit', () => {
+      StorageService.resetToCleanState();
+      const cycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Harvest Cycle Test',
+        startDate: '2026-03-01',
+        farmField: 'Field 9',
+        area: 1.5,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+
+      const originalHarvest = StorageService.createHarvest({
+        cycleId: cycle.id,
+        crop: 'Rice',
+        date: '2026-07-10',
+        quantity: 1200,
+        unit: 'kg',
+        gradeQuality: 'Standard Dry'
+      });
+
+      const updatedHarvest = StorageService.updateHarvest(originalHarvest.id, {
+        cycleId: cycle.id,
+        crop: 'Rice',
+        date: '2026-07-11',
+        quantity: 1450,
+        unit: 'kg',
+        gradeQuality: 'Premium Grade 1',
+        notes: 'Moisture content tested at 14%'
+      });
+
+      assert(updatedHarvest.id === originalHarvest.id, 'Harvest ID must be strictly preserved');
+      assert(updatedHarvest.createdAt === originalHarvest.createdAt, 'Harvest createdAt must be strictly preserved');
+      assert(updatedHarvest.quantity === 1450, 'Harvest quantity must be updated to 1450');
+      assert(updatedHarvest.gradeQuality === 'Premium Grade 1', 'Grade quality must be updated');
+      assert(updatedHarvest.date === '2026-07-11', 'Harvest date must be updated');
+
+      const reloaded = StorageService.getHarvests().find((h) => h.id === originalHarvest.id);
+      assert(reloaded?.quantity === 1450, 'Reloaded harvest must reflect corrected yield');
+
+      const logs = StorageService.getAuditLogs();
+      const updateLog = logs.find((l) => l.entityType === 'HARVEST' && l.entityId === originalHarvest.id && l.eventType === 'UPDATE');
+      assert(!!updateLog, 'UPDATE event must be recorded in audit log');
+    });
+
+
   } finally {
     // Restore original user database state
     StorageService.saveMemoryDatabase(originalDb);

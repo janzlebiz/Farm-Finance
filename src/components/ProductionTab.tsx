@@ -17,7 +17,8 @@ import {
   History,
   AlertCircle,
   ChevronRight,
-  Award
+  Award,
+  Edit2
 } from 'lucide-react';
 
 interface ProductionTabProps {
@@ -39,10 +40,11 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   const [activeSection, setActiveSection] = useState<'cycles' | 'harvests'>('cycles');
 
   const [isAddingCycle, setIsAddingCycle] = useState<boolean>(false);
+  const [editingCycle, setEditingCycle] = useState<ProductionCycle | null>(null);
   const [isAddingHarvest, setIsAddingHarvest] = useState<boolean>(false);
   const [selectedHarvestForDetails, setSelectedHarvestForDetails] = useState<Harvest | null>(null);
 
-  // New Cycle form state
+  // Cycle form state (reused for Create and Edit)
   const [crop, setCrop] = useState<string>('Rice');
   const [cycleName, setCycleName] = useState<string>('');
   const [startDate, setStartDate] = useState<string>(DateUtils.getTodayString());
@@ -51,6 +53,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   const [areaUnit, setAreaUnit] = useState<string>('hectares');
   const [status, setStatus] = useState<ProductionCycle['status']>('ACTIVE');
   const [notes, setNotes] = useState<string>('');
+  const [cycleError, setCycleError] = useState<string | null>(null);
 
   // New Harvest form state
   const [harvestCycleId, setHarvestCycleId] = useState<string>(cycles[0]?.id || '');
@@ -59,6 +62,39 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   const [harvestUnit, setHarvestUnit] = useState<string>('kg');
   const [harvestGrade, setHarvestGrade] = useState<string>('');
   const [harvestDate, setHarvestDate] = useState<string>(DateUtils.getTodayString());
+
+  const resetCycleForm = () => {
+    setIsAddingCycle(false);
+    setEditingCycle(null);
+    setCrop('Rice');
+    setCycleName('');
+    setStartDate(DateUtils.getTodayString());
+    setFarmField('');
+    setArea('1.0');
+    setAreaUnit('hectares');
+    setStatus('ACTIVE');
+    setNotes('');
+    setCycleError(null);
+  };
+
+  const handleStartAddCycle = () => {
+    resetCycleForm();
+    setIsAddingCycle(true);
+  };
+
+  const handleStartEditCycle = (c: ProductionCycle) => {
+    setEditingCycle(c);
+    setCrop(c.crop);
+    setCycleName(c.cycleName);
+    setStartDate(c.startDate);
+    setFarmField(c.farmField);
+    setArea(String(c.area));
+    setAreaUnit(c.areaUnit);
+    setStatus(c.status);
+    setNotes(c.notes || '');
+    setCycleError(null);
+    setIsAddingCycle(true);
+  };
 
   const handleOpenAddHarvest = () => {
     // If cycles exist, ensure harvestCycleId is valid
@@ -70,24 +106,43 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
     setIsAddingHarvest(true);
   };
 
-  const handleCreateCycle = (e: React.FormEvent) => {
+  const handleSaveCycle = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!cycleName.trim()) return;
+    if (!cycleName.trim()) {
+      setCycleError('Cycle Name is required.');
+      return;
+    }
 
-    StorageService.createCycle({
-      crop,
-      cycleName: cycleName.trim(),
-      startDate,
-      farmField: farmField.trim() || 'Main Field',
-      area: parseFloat(area) || 1.0,
-      areaUnit,
-      status,
-      notes: notes.trim() || undefined
-    });
+    try {
+      if (editingCycle) {
+        StorageService.updateCycle(editingCycle.id, {
+          crop: crop as any,
+          cycleName: cycleName.trim(),
+          startDate,
+          farmField: farmField.trim() || 'Main Field',
+          area: parseFloat(area) || 1.0,
+          areaUnit,
+          status,
+          notes: notes.trim() || undefined
+        });
+      } else {
+        StorageService.createCycle({
+          crop: crop as any,
+          cycleName: cycleName.trim(),
+          startDate,
+          farmField: farmField.trim() || 'Main Field',
+          area: parseFloat(area) || 1.0,
+          areaUnit,
+          status,
+          notes: notes.trim() || undefined
+        });
+      }
 
-    setIsAddingCycle(false);
-    setCycleName('');
-    onReload();
+      resetCycleForm();
+      onReload();
+    } catch (err: any) {
+      setCycleError(err?.message || 'Failed to save production cycle.');
+    }
   };
 
   const handleCreateHarvest = (e: React.FormEvent) => {
@@ -99,7 +154,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
 
     StorageService.createHarvest({
       cycleId: harvestCycleId,
-      crop: harvestCrop,
+      crop: harvestCrop as any,
       date: harvestDate,
       quantity: qty,
       unit: harvestUnit,
@@ -134,7 +189,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
             Log Harvest
           </button>
           <button
-            onClick={() => setIsAddingCycle(true)}
+            onClick={handleStartAddCycle}
             className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold shadow-2xs flex items-center gap-1 transition"
           >
             <PlusCircle className="w-3.5 h-3.5" />
@@ -184,7 +239,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
                 </p>
               </div>
               <button
-                onClick={() => setIsAddingCycle(true)}
+                onClick={handleStartAddCycle}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-800 text-white rounded-xl text-xs font-bold hover:bg-emerald-900 shadow-2xs transition"
               >
                 <PlusCircle className="w-3.5 h-3.5" />
@@ -209,9 +264,16 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
                 <div key={c.id} className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-3">
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
                         <span className="text-base">{c.crop === 'Rice' ? '🌾' : '🥥'}</span>
                         <h3 className="font-bold text-sm text-slate-900">{c.cycleName}</h3>
+                        <button
+                          onClick={() => handleStartEditCycle(c)}
+                          className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md transition"
+                          title="Edit cycle details"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">
                         Field: <strong>{c.farmField}</strong> • {c.area} {c.areaUnit}
@@ -345,25 +407,39 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
         </div>
       )}
 
-      {/* Harvest Details Modal */}
+      {/* Harvest Details Modal with Edit Support */}
       {selectedHarvestForDetails && (
         <HarvestDetailsModal
           harvest={selectedHarvestForDetails}
           cycle={cycleMap.get(selectedHarvestForDetails.cycleId)}
+          cycles={cycles}
           onClose={() => setSelectedHarvestForDetails(null)}
+          onUpdated={(updated) => {
+            setSelectedHarvestForDetails(updated);
+            onReload();
+          }}
         />
       )}
 
-      {/* New Cycle Modal */}
+      {/* Create / Edit Cycle Modal */}
       {isAddingCycle && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-5 max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="flex justify-between items-center pb-3 border-b border-slate-200">
-              <h3 className="font-bold text-slate-900 text-base">New Production Cycle</h3>
-              <button onClick={() => setIsAddingCycle(false)} className="p-1 text-slate-400">✕</button>
+              <h3 className="font-bold text-slate-900 text-base">
+                {editingCycle ? 'Edit Production Cycle' : 'New Production Cycle'}
+              </h3>
+              <button onClick={resetCycleForm} className="p-1 text-slate-400 hover:text-slate-600 transition">✕</button>
             </div>
 
-            <form onSubmit={handleCreateCycle} className="py-4 space-y-3 text-xs flex-1">
+            {cycleError && (
+              <div className="mt-3 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{cycleError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveCycle} className="py-4 space-y-3 text-xs flex-1">
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">Crop</label>
                 <select
@@ -411,12 +487,37 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Planting / Start Date</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Status</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as any)}
+                    className="w-full px-3 py-2 border rounded-xl bg-white"
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="ARCHIVED">ARCHIVED</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Planting / Start Date</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                <label className="font-semibold text-slate-700 block mb-1">Notes</label>
+                <textarea
+                  rows={2}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Cycle plans or observations"
                   className="w-full px-3 py-2 border rounded-xl"
                 />
               </div>
@@ -424,16 +525,16 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
               <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsAddingCycle(false)}
-                  className="px-4 py-2 text-slate-600 rounded-xl"
+                  onClick={resetCycleForm}
+                  className="px-4 py-2 text-slate-600 rounded-xl hover:bg-slate-100 transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-800 text-white rounded-xl font-bold"
+                  className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl font-bold transition shadow-2xs"
                 >
-                  Create Cycle
+                  {editingCycle ? 'Update Cycle' : 'Create Cycle'}
                 </button>
               </div>
             </form>
@@ -473,7 +574,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
                     type="button"
                     onClick={() => {
                       setIsAddingHarvest(false);
-                      setIsAddingCycle(true);
+                      handleStartAddCycle();
                     }}
                     className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl font-bold shadow-2xs"
                   >

@@ -815,6 +815,44 @@ export const StorageService = {
     return newBuyer;
   },
 
+  updateBuyer(id: string, data: Partial<Omit<Buyer, 'id' | 'createdDate'>>): Buyer {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      const payload = { id, ...data };
+      const resStr = bridge.updateBuyer(JSON.stringify(payload));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const db = this.loadDatabase();
+        const updated = db.buyers.find((b) => b.id === id);
+        if (updated) return updated;
+      }
+      throw new Error(res.error || 'Failed to update buyer on native database');
+    }
+
+    const db = this.loadDatabase();
+    const existingIndex = db.buyers.findIndex((b) => b.id === id);
+    if (existingIndex === -1) throw new Error('Buyer not found');
+
+    const current = db.buyers[existingIndex];
+    const updated: Buyer = {
+      ...current,
+      ...data,
+      id: current.id, // Preserved
+      createdDate: current.createdDate // Preserved
+    };
+    db.buyers[existingIndex] = updated;
+
+    this.addAuditLog(
+      db,
+      'BUYER',
+      id,
+      'UPDATE',
+      `Updated buyer details for "${updated.name}"`
+    );
+    this.saveMemoryDatabase(db);
+    return updated;
+  },
+
   getSuppliers(): Supplier[] {
     return this.loadDatabase().suppliers;
   },
@@ -842,6 +880,44 @@ export const StorageService = {
     this.addAuditLog(db, 'SUPPLIER', newSupplier.id, 'CREATE', `Added supplier/payee ${newSupplier.name}`);
     this.saveMemoryDatabase(db);
     return newSupplier;
+  },
+
+  updateSupplier(id: string, data: Partial<Omit<Supplier, 'id' | 'createdDate'>>): Supplier {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      const payload = { id, ...data };
+      const resStr = bridge.updateSupplier(JSON.stringify(payload));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const db = this.loadDatabase();
+        const updated = db.suppliers.find((s) => s.id === id);
+        if (updated) return updated;
+      }
+      throw new Error(res.error || 'Failed to update supplier on native database');
+    }
+
+    const db = this.loadDatabase();
+    const existingIndex = db.suppliers.findIndex((s) => s.id === id);
+    if (existingIndex === -1) throw new Error('Supplier not found');
+
+    const current = db.suppliers[existingIndex];
+    const updated: Supplier = {
+      ...current,
+      ...data,
+      id: current.id, // Preserved
+      createdDate: current.createdDate // Preserved
+    };
+    db.suppliers[existingIndex] = updated;
+
+    this.addAuditLog(
+      db,
+      'SUPPLIER',
+      id,
+      'UPDATE',
+      `Updated supplier details for "${updated.name}"`
+    );
+    this.saveMemoryDatabase(db);
+    return updated;
   },
 
   getCategories(): ExpenseCategory[] {
@@ -892,6 +968,46 @@ export const StorageService = {
     return newCycle;
   },
 
+  updateCycle(id: string, data: Partial<Omit<ProductionCycle, 'id' | 'createdAt' | 'updatedAt'>>): ProductionCycle {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      const payload = { id, ...data };
+      const resStr = bridge.updateCycle(JSON.stringify(payload));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const db = this.loadDatabase();
+        const updated = db.cycles.find((c) => c.id === id);
+        if (updated) return updated;
+      }
+      throw new Error(res.error || 'Failed to update cycle on native database');
+    }
+
+    const db = this.loadDatabase();
+    const existingIndex = db.cycles.findIndex((c) => c.id === id);
+    if (existingIndex === -1) throw new Error('Production cycle not found');
+
+    const current = db.cycles[existingIndex];
+    const now = new Date().toISOString();
+    const updated: ProductionCycle = {
+      ...current,
+      ...data,
+      id: current.id, // Preserved
+      createdAt: current.createdAt, // Preserved
+      updatedAt: now
+    };
+    db.cycles[existingIndex] = updated;
+
+    this.addAuditLog(
+      db,
+      'CYCLE',
+      id,
+      'UPDATE',
+      `Updated production cycle "${updated.cycleName}" (${updated.crop})`
+    );
+    this.saveMemoryDatabase(db);
+    return updated;
+  },
+
   getHarvests(): Harvest[] {
     return this.loadDatabase().harvests;
   },
@@ -919,6 +1035,44 @@ export const StorageService = {
     this.addAuditLog(db, 'HARVEST', newHarvest.id, 'CREATE', `Logged harvest: ${newHarvest.quantity} ${newHarvest.unit} of ${newHarvest.crop}`);
     this.saveMemoryDatabase(db);
     return newHarvest;
+  },
+
+  updateHarvest(id: string, data: Partial<Omit<Harvest, 'id' | 'createdAt'>>): Harvest {
+    const bridge = getNativeBridge();
+    if (bridge) {
+      const payload = { id, ...data };
+      const resStr = bridge.updateHarvest(JSON.stringify(payload));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const db = this.loadDatabase();
+        const updated = db.harvests.find((h) => h.id === id);
+        if (updated) return updated;
+      }
+      throw new Error(res.error || 'Failed to update harvest on native database');
+    }
+
+    const db = this.loadDatabase();
+    const existingIndex = db.harvests.findIndex((h) => h.id === id);
+    if (existingIndex === -1) throw new Error('Harvest not found');
+
+    const current = db.harvests[existingIndex];
+    const updated: Harvest = {
+      ...current,
+      ...data,
+      id: current.id, // Preserved
+      createdAt: current.createdAt // Preserved
+    };
+    db.harvests[existingIndex] = updated;
+
+    this.addAuditLog(
+      db,
+      'HARVEST',
+      id,
+      'UPDATE',
+      `Updated harvest details: ${updated.quantity} ${updated.unit} of ${updated.crop}`
+    );
+    this.saveMemoryDatabase(db);
+    return updated;
   },
 
   // =================== AUDIT LOGS ===================

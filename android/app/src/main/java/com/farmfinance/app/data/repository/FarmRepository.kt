@@ -459,6 +459,37 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         return Result.success(entity.toDomain())
     }
 
+    suspend fun updateBuyer(id: String, name: String, contactNumber: String, address: String, notes: String = "", status: String = "ACTIVE"): Result<Buyer> {
+        val existing = db.buyerDao().getBuyerById(id)
+            ?: return Result.failure(IllegalArgumentException("Buyer not found"))
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) return Result.failure(IllegalArgumentException("Buyer name cannot be empty"))
+        val now = System.currentTimeMillis()
+        val updated = existing.copy(
+            name = cleanName,
+            contactNumber = contactNumber.trim(),
+            address = address.trim(),
+            notes = notes.trim(),
+            isActive = status == "ACTIVE"
+        )
+        db.withTransaction {
+            db.buyerDao().updateBuyer(updated)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "BUYER",
+                    entityId = id,
+                    eventType = "UPDATE",
+                    summary = "Updated buyer details for \"$cleanName\"",
+                    metadataJson = "{\"buyerId\": \"$id\"}",
+                    appVersion = "1.0.0"
+                )
+            )
+        }
+        return Result.success(updated.toDomain())
+    }
+
     val allSuppliers: Flow<List<Supplier>> = db.supplierDao().getAllSuppliers().map { entities ->
         entities.map { it.toDomain() }
     }
@@ -493,6 +524,37 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             )
         }
         return Result.success(entity.toDomain())
+    }
+
+    suspend fun updateSupplier(id: String, name: String, contactNumber: String, address: String, notes: String = "", status: String = "ACTIVE"): Result<Supplier> {
+        val existing = db.supplierDao().getSupplierById(id)
+            ?: return Result.failure(IllegalArgumentException("Supplier not found"))
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) return Result.failure(IllegalArgumentException("Supplier name cannot be empty"))
+        val now = System.currentTimeMillis()
+        val updated = existing.copy(
+            name = cleanName,
+            contactNumber = contactNumber.trim(),
+            address = address.trim(),
+            notes = notes.trim(),
+            isActive = status == "ACTIVE"
+        )
+        db.withTransaction {
+            db.supplierDao().updateSupplier(updated)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "SUPPLIER",
+                    entityId = id,
+                    eventType = "UPDATE",
+                    summary = "Updated supplier details for \"$cleanName\"",
+                    metadataJson = "{\"supplierId\": \"$id\"}",
+                    appVersion = "1.0.0"
+                )
+            )
+        }
+        return Result.success(updated.toDomain())
     }
 
     // ================= PRODUCTION =================
@@ -545,6 +607,53 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         return Result.success(entity.toDomain())
     }
 
+    suspend fun updateCycle(
+        id: String,
+        crop: String,
+        cycleName: String,
+        startDate: String,
+        farmField: String,
+        area: Double,
+        areaUnit: String,
+        status: String = "ACTIVE",
+        expectedHarvestDate: String? = null,
+        actualHarvestDate: String? = null,
+        notes: String = ""
+    ): Result<ProductionCycle> {
+        val existing = db.productionDao().getCycleById(id)
+            ?: return Result.failure(IllegalArgumentException("Production cycle not found"))
+        val now = System.currentTimeMillis()
+        val updated = existing.copy(
+            crop = crop,
+            cycleName = cycleName.trim(),
+            startDate = startDate,
+            farmField = farmField.trim(),
+            area = area,
+            areaUnit = areaUnit,
+            status = status,
+            expectedHarvestDate = expectedHarvestDate,
+            actualHarvestDate = actualHarvestDate,
+            notes = notes.trim(),
+            updatedAt = now
+        )
+        db.withTransaction {
+            db.productionDao().updateCycle(updated)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "CYCLE",
+                    entityId = id,
+                    eventType = "UPDATE",
+                    summary = "Updated production cycle \"${updated.cycleName}\" ($crop)",
+                    metadataJson = "{\"cycleId\": \"$id\"}",
+                    appVersion = "1.0.0"
+                )
+            )
+        }
+        return Result.success(updated.toDomain())
+    }
+
     val allHarvests: Flow<List<Harvest>> = db.productionDao().getAllHarvests().map { entities ->
         entities.map { it.toDomain() }
     }
@@ -591,6 +700,50 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             )
         }
         return Result.success(entity.toDomain())
+    }
+
+    suspend fun updateHarvest(
+        id: String,
+        cycleId: String,
+        crop: String,
+        date: String,
+        quantity: Double,
+        unit: String,
+        gradeQuality: String = "",
+        sellingPrice: Money? = null,
+        buyerId: String? = null,
+        notes: String = ""
+    ): Result<Harvest> {
+        val existing = db.productionDao().getHarvestById(id)
+            ?: return Result.failure(IllegalArgumentException("Harvest not found"))
+        val now = System.currentTimeMillis()
+        val updated = existing.copy(
+            cycleId = cycleId,
+            crop = crop,
+            date = date,
+            quantity = quantity,
+            unit = unit,
+            gradeQuality = gradeQuality.trim(),
+            sellingPriceCentavos = sellingPrice?.centavos,
+            buyerId = buyerId,
+            notes = notes.trim()
+        )
+        db.withTransaction {
+            db.productionDao().updateHarvest(updated)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "HARVEST",
+                    entityId = id,
+                    eventType = "UPDATE",
+                    summary = "Updated harvest details: $quantity $unit of $crop",
+                    metadataJson = "{\"harvestId\": \"$id\", \"cycleId\": \"$cycleId\"}",
+                    appVersion = "1.0.0"
+                )
+            )
+        }
+        return Result.success(updated.toDomain())
     }
 
     // Entity to Domain mappers
