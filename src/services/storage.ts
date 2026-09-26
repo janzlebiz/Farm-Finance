@@ -12,7 +12,8 @@ import {
   CropType,
   PaymentMethod,
   DashboardMetrics,
-  DateFilterType
+  DateFilterType,
+  FarmProfile
 } from '../types';
 import { MoneyUtils } from '../utils/money';
 import { DateUtils } from '../utils/date';
@@ -68,6 +69,34 @@ export interface BackupPayload {
 
 // In-Memory Database store (used in standalone web preview, identical Room SQLite schema)
 let memoryDb: AppDatabase | null = null;
+const memoryStorage = new Map<string, string>();
+
+function getStorageItem(key: string): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(key);
+    }
+  } catch (_: any) {}
+  return memoryStorage.get(key) || null;
+}
+
+function setStorageItem(key: string, value: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, value);
+    }
+  } catch (_: any) {}
+  memoryStorage.set(key, value);
+}
+
+function removeStorageItem(key: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(key);
+    }
+  } catch (_: any) {}
+  memoryStorage.delete(key);
+}
 
 function getNativeBridge(): any {
   if (typeof window !== 'undefined' && (window as any).FarmFinanceNative?.isAvailable?.()) {
@@ -218,6 +247,88 @@ export const StorageService = {
       appVersion: APP_VERSION
     };
     db.auditLogs.unshift(log);
+  },
+
+  // =================== FARM PROFILE & ONBOARDING ===================
+  getFarmProfile(): FarmProfile | null {
+    try {
+      const raw = getStorageItem('farm_finance_profile');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.farmName === 'string') {
+          return parsed;
+        }
+      }
+    } catch (_: any) {}
+    return null;
+  },
+
+  saveFarmProfile(profile: FarmProfile): void {
+    try {
+      setStorageItem('farm_finance_profile', JSON.stringify(profile));
+    } catch (_: any) {}
+  },
+
+  hasCompletedOnboarding(): boolean {
+    // 1. Check authoritative farm profile
+    const profile = this.getFarmProfile();
+    if (profile && profile.ownerName?.trim() && profile.farmName?.trim()) {
+      return true;
+    }
+
+    // 2. Check legacy dismissal flag if previously set
+    const dismissed = getStorageItem('farm_finance_onboarding_dismissed');
+    if (dismissed === 'true') {
+      return true;
+    }
+
+    // 3. Existing users check: If database already has existing transactions or records,
+    // do not show onboarding to users who already have existing Farm Finance data.
+    const db = this.loadDatabase();
+    if (
+      db.sales.length > 0 ||
+      db.expenses.length > 0 ||
+      db.buyers.length > 0 ||
+      db.suppliers.length > 0 ||
+      db.cycles.length > 0
+    ) {
+      return true;
+    }
+
+    return false;
+  },
+
+  completeOnboarding(profile: FarmProfile): { success: boolean; error?: string } {
+    if (!profile.ownerName?.trim()) {
+      return { success: false, error: 'Your name is required.' };
+    }
+    if (!profile.farmName?.trim()) {
+      return { success: false, error: 'Farm name is required.' };
+    }
+
+    const cleanProfile: FarmProfile = {
+      ownerName: profile.ownerName.trim(),
+      farmName: profile.farmName.trim(),
+      location: profile.location?.trim() || undefined,
+      primaryCrop: profile.primaryCrop?.trim() || undefined,
+      completedAt: new Date().toISOString()
+    };
+
+    this.saveFarmProfile(cleanProfile);
+    setStorageItem('farm_finance_onboarding_dismissed', 'true');
+
+    // Record audit log for setup
+    const db = this.loadDatabase();
+    this.addAuditLog(
+      db,
+      'BACKUP',
+      'FARM_PROFILE',
+      'CREATE',
+      `Completed initial farm setup for "${cleanProfile.farmName}" (Owner: ${cleanProfile.ownerName})`
+    );
+    this.saveMemoryDatabase(db);
+
+    return { success: true };
   },
 
   // =================== SALES ===================
@@ -1144,6 +1255,9 @@ export const StorageService = {
 
   // Reset to clean production state (empty database, no demo records)
   resetToCleanState(): { success: boolean; message: string } {
+    removeStorageItem('farm_finance_profile');
+    removeStorageItem('farm_finance_onboarding_dismissed');
+
     const bridge = getNativeBridge();
     if (bridge && typeof bridge.clearAllData === 'function') {
       try {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from './services/storage';
-import { Sale, Payment, Expense, ExpenseCategory, Buyer, Supplier, ProductionCycle, Harvest, AuditLog } from './types';
+import { Sale, Payment, Expense, ExpenseCategory, Buyer, Supplier, ProductionCycle, Harvest, AuditLog, FarmProfile } from './types';
 import { MoneyUtils } from './utils/money';
 import { DateUtils } from './utils/date';
 
@@ -20,6 +20,7 @@ import { ExpensePaymentModal } from './components/ExpensePaymentModal';
 import { BackupModal } from './components/BackupModal';
 import { AuditModal } from './components/AuditModal';
 import { ContactsModal } from './components/ContactsModal';
+import { FarmProfileModal } from './components/FarmProfileModal';
 import { InstallAppModal } from './components/InstallAppModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -35,7 +36,8 @@ import {
   MoreHorizontal,
   Download,
   Users,
-  History
+  History,
+  Building
 } from 'lucide-react';
 
 export default function App() {
@@ -70,12 +72,15 @@ export default function App() {
   const [isBackupOpen, setIsBackupOpen] = useState<boolean>(false);
   const [isAuditOpen, setIsAuditOpen] = useState<boolean>(false);
   const [isContactsOpen, setIsContactsOpen] = useState<boolean>(false);
+  const [isFarmProfileOpen, setIsFarmProfileOpen] = useState<boolean>(false);
 
-  // Onboarding state for new users
-  const [isOnboardingDismissed, setIsOnboardingDismissed] = useState<boolean>(() => {
-    return localStorage.getItem('farm_finance_onboarding_dismissed') === 'true';
+  // Onboarding state: Determined authoritatively from StorageService
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    return !StorageService.hasCompletedOnboarding();
   });
-  const [isForcedOnboarding, setIsForcedOnboarding] = useState<boolean>(false);
+  const [farmProfile, setFarmProfile] = useState<FarmProfile | null>(() => {
+    return StorageService.getFarmProfile();
+  });
   const [welcomeToast, setWelcomeToast] = useState<string | null>(null);
 
   // Auto-dismiss welcome toast after 6 seconds
@@ -98,36 +103,20 @@ export default function App() {
     setCycles([...db.cycles]);
     setHarvests([...db.harvests]);
     setAuditLogs([...db.auditLogs]);
-
-    if (db.buyers.length === 0 && db.suppliers.length === 0 && db.sales.length === 0 && db.expenses.length === 0) {
-      if (localStorage.getItem('farm_finance_onboarding_dismissed') !== 'true') {
-        setIsOnboardingDismissed(false);
-      }
-    }
+    setFarmProfile(StorageService.getFarmProfile());
   };
 
   useEffect(() => {
     reloadData();
   }, []);
 
-  // Empty data state detection: No buyers, suppliers, sales, or expenses recorded
-  const isDataEmpty = buyers.length === 0 && suppliers.length === 0 && sales.length === 0 && expenses.length === 0;
-  const showOnboarding = isForcedOnboarding || (isDataEmpty && !isOnboardingDismissed);
-
-  const handleOnboardingComplete = (createdName: string, type: 'buyer' | 'supplier') => {
-    localStorage.setItem('farm_finance_onboarding_dismissed', 'true');
-    setIsOnboardingDismissed(true);
-    setIsForcedOnboarding(false);
+  const handleOnboardingComplete = (profile: FarmProfile) => {
+    StorageService.completeOnboarding(profile);
+    setFarmProfile(profile);
+    setShowOnboarding(false);
     reloadData();
     setActiveTab('dashboard');
-    setWelcomeToast(`Successfully added "${createdName}" as your first ${type === 'buyer' ? 'crop buyer' : 'farm supplier'}. Welcome to Farm Finance!`);
-  };
-
-  const handleOnboardingSkip = () => {
-    localStorage.setItem('farm_finance_onboarding_dismissed', 'true');
-    setIsOnboardingDismissed(true);
-    setIsForcedOnboarding(false);
-    setActiveTab('dashboard');
+    setWelcomeToast(`Welcome, ${profile.ownerName}! ${profile.farmName} has been set up successfully.`);
   };
 
   const openPaymentForSale = (sale: Sale, remainingBalanceCentavos: number) => {
@@ -138,6 +127,15 @@ export default function App() {
     setExpensePaymentModalData({ expense, remainingBalanceCentavos });
   };
 
+  // Dedicated first-run onboarding screen: does NOT overlay or block the Home dashboard
+  if (showOnboarding) {
+    return (
+      <div className="h-screen h-dvh w-full max-w-full flex flex-col overflow-hidden bg-slate-50 text-slate-900 select-none">
+        <OnboardingWizard onComplete={handleOnboardingComplete} />
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen h-dvh w-full max-w-full flex flex-col overflow-hidden bg-slate-50 text-slate-900 select-none">
       
@@ -145,7 +143,7 @@ export default function App() {
       <header className="shrink-0 bg-emerald-800 text-white px-4 py-3 shadow-md flex items-center justify-between z-20 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
         <div>
           <div className="text-[10px] uppercase font-bold tracking-widest text-emerald-200">
-            Farm Finance
+            {farmProfile?.farmName ? `Farm Finance · ${farmProfile.farmName}` : 'Farm Finance'}
           </div>
           <h1 className="text-base font-extrabold tracking-tight capitalize">
             {activeTab === 'dashboard'
@@ -424,6 +422,20 @@ export default function App() {
                 </div>
                 <span className="text-slate-400 text-xs">→</span>
               </button>
+
+              <button
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  setIsFarmProfileOpen(true);
+                }}
+                className="w-full text-left p-3 rounded-xl hover:bg-slate-50 text-slate-800 font-semibold flex items-center justify-between transition border border-slate-200"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Building className="w-4 h-4 text-slate-700" />
+                  <span>Farm Profile & Settings</span>
+                </div>
+                <span className="text-slate-400 text-xs">→</span>
+              </button>
             </div>
 
             <button
@@ -436,11 +448,14 @@ export default function App() {
         </div>
       )}
 
-      {/* First-time User Onboarding Wizard */}
-      {showOnboarding && (
-        <OnboardingWizard
-          onComplete={handleOnboardingComplete}
-          onSkip={handleOnboardingSkip}
+      {/* Farm Profile & Settings Modal */}
+      {isFarmProfileOpen && (
+        <FarmProfileModal
+          onClose={() => setIsFarmProfileOpen(false)}
+          onSaved={(updated) => {
+            setFarmProfile(updated);
+            reloadData();
+          }}
         />
       )}
 

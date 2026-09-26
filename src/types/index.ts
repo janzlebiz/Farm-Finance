@@ -136,6 +136,14 @@ export interface AuditLog {
   appVersion: string;
 }
 
+export interface FarmProfile {
+  ownerName: string;
+  farmName: string;
+  location?: string;
+  primaryCrop?: string;
+  completedAt?: string;
+}
+
 export type DateFilterType = 'today' | 'week' | 'month' | 'year' | 'custom' | 'all';
 
 export interface DateFilterRange {

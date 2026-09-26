@@ -829,6 +829,91 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(db.sales[0].grossAmountCentavos === 700000, 'Balance must remain unchanged');
     });
 
+    // ----------------------------------------------------
+    // SUITE: FIRST-RUN FARM SETUP & ONBOARDING (@6.1)
+    // ----------------------------------------------------
+    await executeTest('Onboarding', 'New installation -> onboarding appears', () => {
+      StorageService.resetToCleanState();
+      const hasCompleted = StorageService.hasCompletedOnboarding();
+      assert(hasCompleted === false, 'New installation without setup must require onboarding (hasCompletedOnboarding == false)');
+      const profile = StorageService.getFarmProfile();
+      assert(profile === null, 'No farm profile should exist on new installation');
+    });
+
+    await executeTest('Onboarding', 'Complete setup -> Home appears', () => {
+      StorageService.resetToCleanState();
+      // Required validation: Reject blank/empty fields
+      const blankRes = StorageService.completeOnboarding({ ownerName: '', farmName: '' });
+      assert(blankRes.success === false, 'Validation must reject empty owner and farm name');
+
+      const validRes = StorageService.completeOnboarding({
+        ownerName: 'Juan dela Cruz',
+        farmName: 'San Jose Rice & Coconut Farm',
+        location: 'Brgy. San Jose, Nueva Ecija',
+        primaryCrop: 'Rice'
+      });
+      assert(validRes.success === true, 'Valid farm setup must succeed');
+
+      const hasCompleted = StorageService.hasCompletedOnboarding();
+      assert(hasCompleted === true, 'After completing setup, onboarding must be completed (Home appears)');
+
+      const profile = StorageService.getFarmProfile();
+      assert(profile?.ownerName === 'Juan dela Cruz', 'Saved owner name must match');
+      assert(profile?.farmName === 'San Jose Rice & Coconut Farm', 'Saved farm name must match');
+      assert(profile?.location === 'Brgy. San Jose, Nueva Ecija', 'Saved location must match');
+    });
+
+    await executeTest('Onboarding', 'Close/reopen -> onboarding does not appear again', () => {
+      // Simulate close/reopen: verify state survives and stays completed
+      const hasCompleted = StorageService.hasCompletedOnboarding();
+      assert(hasCompleted === true, 'Onboarding must remain completed across app reopen/restart');
+      const profile = StorageService.getFarmProfile();
+      assert(profile?.farmName === 'San Jose Rice & Coconut Farm', 'Farm profile must persist across app reopen');
+    });
+
+    await executeTest('Onboarding', 'Existing configured user -> Home appears directly', () => {
+      StorageService.resetToCleanState();
+      // Simulate an existing user with transactions but no explicit farm profile yet
+      const buyer = StorageService.createBuyer({
+        name: 'Existing Miller',
+        contactNumber: '',
+        address: '',
+        notes: '',
+        status: 'ACTIVE'
+      });
+      StorageService.createSale({
+        date: '2026-09-20',
+        crop: 'Rice',
+        quantity: 10,
+        unit: 'sack',
+        unitPriceCentavos: 150000,
+        buyerId: buyer.id
+      });
+
+      // Even without a FarmProfile saved, hasCompletedOnboarding must be TRUE for existing users
+      const hasCompleted = StorageService.hasCompletedOnboarding();
+      assert(hasCompleted === true, 'Existing user with transaction data must bypass onboarding directly to Home');
+    });
+
+    await executeTest('Onboarding', 'Existing financial data remains unchanged', () => {
+      // Create financial records
+      const dbBefore = StorageService.loadDatabase();
+      const initialSalesCount = dbBefore.sales.length;
+      assert(initialSalesCount > 0, 'Must have existing sales');
+
+      // Update or complete setup
+      StorageService.completeOnboarding({
+        ownerName: 'Maria Santos',
+        farmName: 'Santos Agro Farm',
+        location: 'Isabela'
+      });
+
+      const dbAfter = StorageService.loadDatabase();
+      assert(dbAfter.sales.length === initialSalesCount, 'Sales records must remain completely unchanged');
+      assert(dbAfter.buyers.length === dbBefore.buyers.length, 'Buyers must remain completely unchanged');
+      assert(dbAfter.expenses.length === dbBefore.expenses.length, 'Expenses must remain completely unchanged');
+    });
+
   } finally {
     // Restore original user database state
     StorageService.saveMemoryDatabase(originalDb);
