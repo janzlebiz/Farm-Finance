@@ -682,17 +682,14 @@ export const StorageService = {
   createBuyer(data: Omit<Buyer, 'id' | 'createdDate'>): Buyer {
     const bridge = getNativeBridge();
     if (bridge) {
-      try {
-        const resStr = bridge.createBuyer(JSON.stringify(data));
-        const res = JSON.parse(resStr);
-        if (res.success) {
-          const db = this.loadDatabase();
-          const created = db.buyers.find((b) => b.id === res.buyerId);
-          if (created) return created;
-        }
-      } catch (e) {
-        console.error('Bridge createBuyer error:', e);
+      const resStr = bridge.createBuyer(JSON.stringify(data));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const db = this.loadDatabase();
+        const created = db.buyers.find((b) => b.id === res.buyerId);
+        if (created) return created;
       }
+      throw new Error(res.error || 'Failed to create buyer on native database');
     }
 
     const db = this.loadDatabase();
@@ -714,17 +711,14 @@ export const StorageService = {
   createSupplier(data: Omit<Supplier, 'id' | 'createdDate'>): Supplier {
     const bridge = getNativeBridge();
     if (bridge) {
-      try {
-        const resStr = bridge.createSupplier(JSON.stringify(data));
-        const res = JSON.parse(resStr);
-        if (res.success) {
-          const db = this.loadDatabase();
-          const created = db.suppliers.find((s) => s.id === res.supplierId);
-          if (created) return created;
-        }
-      } catch (e) {
-        console.error('Bridge createSupplier error:', e);
+      const resStr = bridge.createSupplier(JSON.stringify(data));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const db = this.loadDatabase();
+        const created = db.suppliers.find((s) => s.id === res.supplierId);
+        if (created) return created;
       }
+      throw new Error(res.error || 'Failed to create supplier on native database');
     }
 
     const db = this.loadDatabase();
@@ -763,17 +757,14 @@ export const StorageService = {
   createCycle(data: Omit<ProductionCycle, 'id' | 'createdAt' | 'updatedAt'>): ProductionCycle {
     const bridge = getNativeBridge();
     if (bridge) {
-      try {
-        const resStr = bridge.createCycle(JSON.stringify(data));
-        const res = JSON.parse(resStr);
-        if (res.success) {
-          const db = this.loadDatabase();
-          const created = db.cycles.find((c) => c.id === res.cycleId);
-          if (created) return created;
-        }
-      } catch (e) {
-        console.error('Bridge createCycle error:', e);
+      const resStr = bridge.createCycle(JSON.stringify(data));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const db = this.loadDatabase();
+        const created = db.cycles.find((c) => c.id === res.cycleId);
+        if (created) return created;
       }
+      throw new Error(res.error || 'Failed to create cycle on native database');
     }
 
     const db = this.loadDatabase();
@@ -797,17 +788,14 @@ export const StorageService = {
   createHarvest(data: Omit<Harvest, 'id' | 'createdAt'>): Harvest {
     const bridge = getNativeBridge();
     if (bridge) {
-      try {
-        const resStr = bridge.createHarvest(JSON.stringify(data));
-        const res = JSON.parse(resStr);
-        if (res.success) {
-          const db = this.loadDatabase();
-          const created = db.harvests.find((h) => h.id === res.harvestId);
-          if (created) return created;
-        }
-      } catch (e) {
-        console.error('Bridge createHarvest error:', e);
+      const resStr = bridge.createHarvest(JSON.stringify(data));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const db = this.loadDatabase();
+        const created = db.harvests.find((h) => h.id === res.harvestId);
+        if (created) return created;
       }
+      throw new Error(res.error || 'Failed to create harvest on native database');
     }
 
     const db = this.loadDatabase();

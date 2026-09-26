@@ -1,5 +1,6 @@
 package com.farmfinance.app.data.repository
 
+import androidx.room.withTransaction
 import com.farmfinance.app.data.local.FarmFinanceDatabase
 import com.farmfinance.app.data.local.entity.*
 import com.farmfinance.app.domain.calculator.FinancialCalculator
@@ -50,21 +51,22 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             updatedAt = now
         )
 
-        db.saleDao().insertSale(entity)
-
-        // Audit Log
-        db.auditLogDao().insertAuditLog(
-            AuditLogEntity(
-                id = "audit_${UUID.randomUUID()}",
-                timestamp = now,
-                entityType = "SALE",
-                entityId = saleId,
-                eventType = "CREATE",
-                summary = "Created sale of $quantity $unit $crop to ${buyer.name} for ${gross.format()}",
-                metadataJson = "{\"gross\": ${gross.centavos}, \"buyerId\": \"$buyerId\"}",
-                appVersion = "1.0.0"
+        db.withTransaction {
+            db.saleDao().insertSale(entity)
+            // Audit Log
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "SALE",
+                    entityId = saleId,
+                    eventType = "CREATE",
+                    summary = "Created sale of $quantity $unit $crop to ${buyer.name} for ${gross.format()}",
+                    metadataJson = "{\"gross\": ${gross.centavos}, \"buyerId\": \"$buyerId\"}",
+                    appVersion = "1.0.0"
+                )
             )
-        )
+        }
 
         return Result.success(entity.toDomain())
     }
@@ -121,21 +123,22 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             createdAt = now
         )
 
-        db.paymentDao().insertPayment(entity)
-
-        // Audit Log
-        db.auditLogDao().insertAuditLog(
-            AuditLogEntity(
-                id = "audit_${UUID.randomUUID()}",
-                timestamp = now,
-                entityType = "PAYMENT",
-                entityId = paymentId,
-                eventType = "CREATE",
-                summary = "Payment of ${amount.format()} recorded for sale $saleId",
-                metadataJson = "{\"saleId\": \"$saleId\", \"amount\": ${amount.centavos}}",
-                appVersion = "1.0.0"
+        db.withTransaction {
+            db.paymentDao().insertPayment(entity)
+            // Audit Log
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "PAYMENT",
+                    entityId = paymentId,
+                    eventType = "CREATE",
+                    summary = "Payment of ${amount.format()} recorded for sale $saleId",
+                    metadataJson = "{\"saleId\": \"$saleId\", \"amount\": ${amount.centavos}}",
+                    appVersion = "1.0.0"
+                )
             )
-        )
+        }
 
         return Result.success(entity.toDomain())
     }
@@ -188,39 +191,37 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             updatedAt = now
         )
 
-        // Transactional insert of expense and initial payment record if paid > 0
-        db.runInTransaction {
-            kotlinx.coroutines.runBlocking {
-                db.expenseDao().insertExpense(entity)
-                if (paid.centavos > 0L) {
-                    val initialPayment = ExpensePaymentEntity(
-                        id = "exp_pay_${UUID.randomUUID()}",
-                        expenseId = expenseId,
-                        supplierId = supplierId,
-                        date = date,
-                        amountCentavos = paid.centavos,
-                        paymentMethod = method.name,
-                        reference = reference,
-                        notes = "Initial expense payment on creation",
-                        isVoided = false,
-                        createdAt = now
-                    )
-                    db.expensePaymentDao().insertExpensePayment(initialPayment)
-                }
-                // Audit Log
-                db.auditLogDao().insertAuditLog(
-                    AuditLogEntity(
-                        id = "audit_${UUID.randomUUID()}",
-                        timestamp = now,
-                        entityType = "EXPENSE",
-                        entityId = expenseId,
-                        eventType = "CREATE",
-                        summary = "Recorded expense of ${incurred.format()} ($category), paid ${paid.format()}",
-                        metadataJson = "{\"incurred\": ${incurred.centavos}, \"paid\": ${paid.centavos}}",
-                        appVersion = "1.0.0"
-                    )
+        // Suspendable atomic transaction: insert expense and initial payment record if paid > 0
+        db.withTransaction {
+            db.expenseDao().insertExpense(entity)
+            if (paid.centavos > 0L) {
+                val initialPayment = ExpensePaymentEntity(
+                    id = "exp_pay_${UUID.randomUUID()}",
+                    expenseId = expenseId,
+                    supplierId = supplierId,
+                    date = date,
+                    amountCentavos = paid.centavos,
+                    paymentMethod = method.name,
+                    reference = reference,
+                    notes = "Initial expense payment on creation",
+                    isVoided = false,
+                    createdAt = now
                 )
+                db.expensePaymentDao().insertExpensePayment(initialPayment)
             }
+            // Audit Log
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "EXPENSE",
+                    entityId = expenseId,
+                    eventType = "CREATE",
+                    summary = "Recorded expense of ${incurred.format()} ($category), paid ${paid.format()}",
+                    metadataJson = "{\"incurred\": ${incurred.centavos}, \"paid\": ${paid.centavos}}",
+                    appVersion = "1.0.0"
+                )
+            )
         }
 
         return Result.success(entity.toDomain())
@@ -273,24 +274,22 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         val newTotalPaid = currentPaid + amount.centavos
         val updatedExpense = expense.copy(amountPaidCentavos = newTotalPaid, updatedAt = now)
 
-        // Atomic transaction: Insert expense payment and update parent cached amountPaidCentavos
-        db.runInTransaction {
-            kotlinx.coroutines.runBlocking {
-                db.expensePaymentDao().insertExpensePayment(paymentEntity)
-                db.expenseDao().updateExpense(updatedExpense)
-                db.auditLogDao().insertAuditLog(
-                    AuditLogEntity(
-                        id = "audit_${UUID.randomUUID()}",
-                        timestamp = now,
-                        entityType = "EXPENSE",
-                        entityId = paymentId,
-                        eventType = "CREATE",
-                        summary = "Recorded expense payment of ${amount.format()} for expense $expenseId",
-                        metadataJson = "{\"expenseId\": \"$expenseId\", \"amount\": ${amount.centavos}}",
-                        appVersion = "1.0.0"
-                    )
+        // Suspendable atomic transaction: Insert expense payment and update parent cached amountPaidCentavos
+        db.withTransaction {
+            db.expensePaymentDao().insertExpensePayment(paymentEntity)
+            db.expenseDao().updateExpense(updatedExpense)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "EXPENSE",
+                    entityId = paymentId,
+                    eventType = "CREATE",
+                    summary = "Recorded expense payment of ${amount.format()} for expense $expenseId",
+                    metadataJson = "{\"expenseId\": \"$expenseId\", \"amount\": ${amount.centavos}}",
+                    appVersion = "1.0.0"
                 )
-            }
+            )
         }
 
         return Result.success(paymentEntity.toDomain())
@@ -308,25 +307,23 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             ?: return Result.failure(IllegalArgumentException("Parent expense not found"))
 
         val now = System.currentTimeMillis()
-        db.runInTransaction {
-            kotlinx.coroutines.runBlocking {
-                db.expensePaymentDao().updateExpensePayment(payment.copy(isVoided = true))
-                val validRemaining = db.expensePaymentDao().getValidPaymentsForExpenseSync(payment.expenseId)
-                val newPaidSum = validRemaining.sumOf { it.amountCentavos }
-                db.expenseDao().updateExpense(expense.copy(amountPaidCentavos = newPaidSum, updatedAt = now))
-                db.auditLogDao().insertAuditLog(
-                    AuditLogEntity(
-                        id = "audit_${UUID.randomUUID()}",
-                        timestamp = now,
-                        entityType = "EXPENSE",
-                        entityId = paymentId,
-                        eventType = "VOID",
-                        summary = "Voided expense payment $paymentId of ${Money(payment.amountCentavos).format()}",
-                        metadataJson = "{\"paymentId\": \"$paymentId\", \"reason\": \"$reason\"}",
-                        appVersion = "1.0.0"
-                    )
+        db.withTransaction {
+            db.expensePaymentDao().updateExpensePayment(payment.copy(isVoided = true))
+            val validRemaining = db.expensePaymentDao().getValidPaymentsForExpenseSync(payment.expenseId)
+            val newPaidSum = validRemaining.sumOf { it.amountCentavos }
+            db.expenseDao().updateExpense(expense.copy(amountPaidCentavos = newPaidSum, updatedAt = now))
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "EXPENSE",
+                    entityId = paymentId,
+                    eventType = "VOID",
+                    summary = "Voided expense payment $paymentId of ${Money(payment.amountCentavos).format()}",
+                    metadataJson = "{\"paymentId\": \"$paymentId\", \"reason\": \"$reason\"}",
+                    appVersion = "1.0.0"
                 )
-            }
+            )
         }
         return Result.success(Unit)
     }
@@ -342,29 +339,27 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         val now = System.currentTimeMillis()
         val associatedPayments = db.paymentDao().getAllPaymentsForSaleSync(saleId)
 
-        // Transactional voiding of sale and all child payments
-        db.runInTransaction {
+        // Suspendable atomic transaction: voiding sale and all child payments
+        db.withTransaction {
             val updatedSale = sale.copy(isVoided = true, updatedAt = now)
-            kotlinx.coroutines.runBlocking {
-                db.saleDao().updateSale(updatedSale)
-                for (payment in associatedPayments) {
-                    if (!payment.isVoided) {
-                        db.paymentDao().updatePayment(payment.copy(isVoided = true))
-                    }
+            db.saleDao().updateSale(updatedSale)
+            for (payment in associatedPayments) {
+                if (!payment.isVoided) {
+                    db.paymentDao().updatePayment(payment.copy(isVoided = true))
                 }
-                db.auditLogDao().insertAuditLog(
-                    AuditLogEntity(
-                        id = "audit_${UUID.randomUUID()}",
-                        timestamp = now,
-                        entityType = "SALE",
-                        entityId = saleId,
-                        eventType = "VOID",
-                        summary = "Voided sale $saleId (${Money(sale.grossAmountCentavos).format()}). Reason: $reason. ${associatedPayments.size} associated payments voided.",
-                        metadataJson = "{\"saleId\": \"$saleId\", \"reason\": \"$reason\"}",
-                        appVersion = "1.0.0"
-                    )
-                )
             }
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "SALE",
+                    entityId = saleId,
+                    eventType = "VOID",
+                    summary = "Voided sale $saleId (${Money(sale.grossAmountCentavos).format()}). Reason: $reason. ${associatedPayments.size} associated payments voided.",
+                    metadataJson = "{\"saleId\": \"$saleId\", \"reason\": \"$reason\"}",
+                    appVersion = "1.0.0"
+                )
+            )
         }
         return Result.success(Unit)
     }
@@ -377,19 +372,21 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         }
 
         val now = System.currentTimeMillis()
-        db.paymentDao().updatePayment(payment.copy(isVoided = true))
-        db.auditLogDao().insertAuditLog(
-            AuditLogEntity(
-                id = "audit_${UUID.randomUUID()}",
-                timestamp = now,
-                entityType = "PAYMENT",
-                entityId = paymentId,
-                eventType = "VOID",
-                summary = "Voided payment $paymentId of ${Money(payment.amountCentavos).format()}. Reason: $reason",
-                metadataJson = "{\"paymentId\": \"$paymentId\", \"saleId\": \"${payment.saleId}\"}",
-                appVersion = "1.0.0"
+        db.withTransaction {
+            db.paymentDao().updatePayment(payment.copy(isVoided = true))
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "PAYMENT",
+                    entityId = paymentId,
+                    eventType = "VOID",
+                    summary = "Voided payment $paymentId of ${Money(payment.amountCentavos).format()}. Reason: $reason",
+                    metadataJson = "{\"paymentId\": \"$paymentId\", \"saleId\": \"${payment.saleId}\"}",
+                    appVersion = "1.0.0"
+                )
             )
-        )
+        }
         return Result.success(Unit)
     }
 
@@ -403,26 +400,24 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         val now = System.currentTimeMillis()
         val childPayments = db.expensePaymentDao().getValidPaymentsForExpenseSync(expenseId)
 
-        db.runInTransaction {
-            kotlinx.coroutines.runBlocking {
-                val updated = expense.copy(isVoided = true, updatedAt = now)
-                db.expenseDao().updateExpense(updated)
-                for (p in childPayments) {
-                    db.expensePaymentDao().updateExpensePayment(p.copy(isVoided = true))
-                }
-                db.auditLogDao().insertAuditLog(
-                    AuditLogEntity(
-                        id = "audit_${UUID.randomUUID()}",
-                        timestamp = now,
-                        entityType = "EXPENSE",
-                        entityId = expenseId,
-                        eventType = "VOID",
-                        summary = "Voided expense $expenseId of ${Money(expense.amountIncurredCentavos).format()}. Reason: $reason. ${childPayments.size} associated payments voided.",
-                        metadataJson = "{\"expenseId\": \"$expenseId\", \"reason\": \"$reason\"}",
-                        appVersion = "1.0.0"
-                    )
-                )
+        db.withTransaction {
+            val updated = expense.copy(isVoided = true, updatedAt = now)
+            db.expenseDao().updateExpense(updated)
+            for (p in childPayments) {
+                db.expensePaymentDao().updateExpensePayment(p.copy(isVoided = true))
             }
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "EXPENSE",
+                    entityId = expenseId,
+                    eventType = "VOID",
+                    summary = "Voided expense $expenseId of ${Money(expense.amountIncurredCentavos).format()}. Reason: $reason. ${childPayments.size} associated payments voided.",
+                    metadataJson = "{\"expenseId\": \"$expenseId\", \"reason\": \"$reason\"}",
+                    appVersion = "1.0.0"
+                )
+            )
         }
         return Result.success(Unit)
     }
@@ -446,19 +441,21 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             createdDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now)),
             isActive = true
         )
-        db.buyerDao().insertBuyer(entity)
-        db.auditLogDao().insertAuditLog(
-            AuditLogEntity(
-                id = "audit_${UUID.randomUUID()}",
-                timestamp = now,
-                entityType = "BUYER",
-                entityId = id,
-                eventType = "CREATE",
-                summary = "Added buyer $cleanName",
-                metadataJson = "{\"buyerId\": \"$id\"}",
-                appVersion = "1.0.0"
+        db.withTransaction {
+            db.buyerDao().insertBuyer(entity)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "BUYER",
+                    entityId = id,
+                    eventType = "CREATE",
+                    summary = "Added buyer $cleanName",
+                    metadataJson = "{\"buyerId\": \"$id\"}",
+                    appVersion = "1.0.0"
+                )
             )
-        )
+        }
         return Result.success(entity.toDomain())
     }
 
@@ -480,19 +477,21 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             createdDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now)),
             isActive = true
         )
-        db.supplierDao().insertSupplier(entity)
-        db.auditLogDao().insertAuditLog(
-            AuditLogEntity(
-                id = "audit_${UUID.randomUUID()}",
-                timestamp = now,
-                entityType = "SUPPLIER",
-                entityId = id,
-                eventType = "CREATE",
-                summary = "Added supplier $cleanName",
-                metadataJson = "{\"supplierId\": \"$id\"}",
-                appVersion = "1.0.0"
+        db.withTransaction {
+            db.supplierDao().insertSupplier(entity)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "SUPPLIER",
+                    entityId = id,
+                    eventType = "CREATE",
+                    summary = "Added supplier $cleanName",
+                    metadataJson = "{\"supplierId\": \"$id\"}",
+                    appVersion = "1.0.0"
+                )
             )
-        )
+        }
         return Result.success(entity.toDomain())
     }
 
@@ -528,19 +527,21 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             createdAt = now,
             updatedAt = now
         )
-        db.productionDao().insertCycle(entity)
-        db.auditLogDao().insertAuditLog(
-            AuditLogEntity(
-                id = "audit_${UUID.randomUUID()}",
-                timestamp = now,
-                entityType = "CYCLE",
-                entityId = id,
-                eventType = "CREATE",
-                summary = "Created cycle $cycleName ($crop)",
-                metadataJson = "{\"cycleId\": \"$id\"}",
-                appVersion = "1.0.0"
+        db.withTransaction {
+            db.productionDao().insertCycle(entity)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "CYCLE",
+                    entityId = id,
+                    eventType = "CREATE",
+                    summary = "Created cycle $cycleName ($crop)",
+                    metadataJson = "{\"cycleId\": \"$id\"}",
+                    appVersion = "1.0.0"
+                )
             )
-        )
+        }
         return Result.success(entity.toDomain())
     }
 
@@ -574,19 +575,21 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
             notes = notes.trim(),
             createdAt = now
         )
-        db.productionDao().insertHarvest(entity)
-        db.auditLogDao().insertAuditLog(
-            AuditLogEntity(
-                id = "audit_${UUID.randomUUID()}",
-                timestamp = now,
-                entityType = "HARVEST",
-                entityId = id,
-                eventType = "CREATE",
-                summary = "Recorded harvest of $quantity $unit $crop",
-                metadataJson = "{\"harvestId\": \"$id\", \"cycleId\": \"$cycleId\"}",
-                appVersion = "1.0.0"
+        db.withTransaction {
+            db.productionDao().insertHarvest(entity)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "HARVEST",
+                    entityId = id,
+                    eventType = "CREATE",
+                    summary = "Recorded harvest of $quantity $unit $crop",
+                    metadataJson = "{\"harvestId\": \"$id\", \"cycleId\": \"$cycleId\"}",
+                    appVersion = "1.0.0"
+                )
             )
-        )
+        }
         return Result.success(entity.toDomain())
     }
 

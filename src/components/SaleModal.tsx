@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Buyer, ProductionCycle } from '../types';
 import { MoneyUtils } from '../utils/money';
 import { StorageService } from '../services/storage';
@@ -9,14 +9,17 @@ interface SaleModalProps {
   cycles: ProductionCycle[];
   onClose: () => void;
   onSuccess: () => void;
+  onBuyerAdded?: (buyer: Buyer) => void;
 }
 
 export const SaleModal: React.FC<SaleModalProps> = ({
   buyers,
   cycles,
   onClose,
-  onSuccess
+  onSuccess,
+  onBuyerAdded
 }) => {
+  const [availableBuyers, setAvailableBuyers] = useState<Buyer[]>(buyers);
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [crop, setCrop] = useState<string>('Rice');
   const [quantityStr, setQuantityStr] = useState<string>('');
@@ -26,6 +29,13 @@ export const SaleModal: React.FC<SaleModalProps> = ({
   const [cycleId, setCycleId] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAvailableBuyers(buyers);
+    if (!buyerId && buyers.length > 0) {
+      setBuyerId(buyers[0].id);
+    }
+  }, [buyers]);
 
   // New Buyer inline state (auto open if no buyers saved yet)
   const [isAddingBuyer, setIsAddingBuyer] = useState<boolean>(buyers.length === 0);
@@ -38,17 +48,26 @@ export const SaleModal: React.FC<SaleModalProps> = ({
 
   const handleCreateNewBuyer = () => {
     if (!newBuyerName.trim()) return;
-    const created = StorageService.createBuyer({
-      name: newBuyerName.trim(),
-      contactNumber: newBuyerContact.trim(),
-      address: '',
-      notes: '',
-      status: 'ACTIVE'
-    });
-    setBuyerId(created.id);
-    setIsAddingBuyer(false);
-    setNewBuyerName('');
-    setNewBuyerContact('');
+    setError(null);
+    try {
+      const created = StorageService.createBuyer({
+        name: newBuyerName.trim(),
+        contactNumber: newBuyerContact.trim(),
+        address: '',
+        notes: '',
+        status: 'ACTIVE'
+      });
+      setAvailableBuyers((prev) => [created, ...prev.filter((b) => b.id !== created.id)]);
+      setBuyerId(created.id);
+      setIsAddingBuyer(false);
+      setNewBuyerName('');
+      setNewBuyerContact('');
+      if (onBuyerAdded) {
+        onBuyerAdded(created);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to create buyer');
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -264,7 +283,7 @@ export const SaleModal: React.FC<SaleModalProps> = ({
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-600 bg-white"
               >
                 <option value="">Select Buyer...</option>
-                {buyers.map((b) => (
+                {availableBuyers.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name} ({b.address || 'Local'})
                   </option>

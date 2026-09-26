@@ -144,15 +144,6 @@ export default function App() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsInstallModalOpen(true)}
-            className="hover:text-emerald-300 font-semibold flex items-center gap-1 transition text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-800/80"
-            title="Install app to phone or Android device"
-          >
-            <Smartphone className="w-3.5 h-3.5 text-emerald-300" />
-            Install on Phone
-          </button>
-          <span>•</span>
-          <button
             onClick={() => setIsPhoneFrame(!isPhoneFrame)}
             className="hover:text-white flex items-center gap-1 transition"
             title="Toggle Smartphone Frame"
@@ -194,14 +185,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setIsInstallModalOpen(true)}
-              className="p-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 flex items-center gap-1 text-[11px] font-bold transition border border-emerald-600/50"
-              title="Install on Phone (Android / iOS)"
-            >
-              <Smartphone className="w-4 h-4 text-emerald-300" />
-              <span>Install</span>
-            </button>
             <button
               onClick={() => setIsMoreMenuOpen(true)}
               className="p-2 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 transition"
@@ -320,6 +303,9 @@ export default function App() {
           onSuccess={() => {
             setIsSaleModalOpen(false);
             reloadData();
+          }}
+          onBuyerAdded={(newBuyer) => {
+            setBuyers((prev) => [newBuyer, ...prev.filter((b) => b.id !== newBuyer.id)]);
           }}
         />
       )}

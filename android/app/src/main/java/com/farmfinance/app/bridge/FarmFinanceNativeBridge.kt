@@ -2,6 +2,7 @@ package com.farmfinance.app.bridge
 
 import android.content.Context
 import android.webkit.JavascriptInterface
+import androidx.room.withTransaction
 import com.farmfinance.app.data.local.FarmFinanceDatabase
 import com.farmfinance.app.data.local.entity.*
 import com.farmfinance.app.data.repository.FarmRepository
@@ -58,7 +59,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun getDatabaseState(): String = runBlocking {
+    fun getDatabaseState(): String = runBlocking(Dispatchers.IO) {
         try {
             val buyers = db.buyerDao().getAllBuyersSync()
             val suppliers = db.supplierDao().getAllSuppliersSync()
@@ -233,7 +234,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun recordSale(jsonStr: String): String = runBlocking {
+    fun recordSale(jsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val json = JSONObject(jsonStr)
             val date = json.getString("date")
@@ -278,7 +279,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun recordPayment(jsonStr: String): String = runBlocking {
+    fun recordPayment(jsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val json = JSONObject(jsonStr)
             val saleId = json.getString("saleId")
@@ -319,7 +320,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun voidSale(saleId: String, reason: String): String = runBlocking {
+    fun voidSale(saleId: String, reason: String): String = runBlocking(Dispatchers.IO) {
         try {
             val result = repository.voidSale(saleId, reason)
             if (result.isSuccess) {
@@ -339,7 +340,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun voidPayment(paymentId: String, reason: String): String = runBlocking {
+    fun voidPayment(paymentId: String, reason: String): String = runBlocking(Dispatchers.IO) {
         try {
             val result = repository.voidPayment(paymentId, reason)
             if (result.isSuccess) {
@@ -359,7 +360,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun recordExpense(jsonStr: String): String = runBlocking {
+    fun recordExpense(jsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val json = JSONObject(jsonStr)
             val date = json.getString("date")
@@ -410,7 +411,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun voidExpense(expenseId: String, reason: String): String = runBlocking {
+    fun voidExpense(expenseId: String, reason: String): String = runBlocking(Dispatchers.IO) {
         try {
             val result = repository.voidExpense(expenseId, reason)
             if (result.isSuccess) {
@@ -430,7 +431,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun recordExpensePayment(jsonStr: String): String = runBlocking {
+    fun recordExpensePayment(jsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val json = JSONObject(jsonStr)
             val expenseId = json.getString("expenseId")
@@ -471,7 +472,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun voidExpensePayment(paymentId: String, reason: String): String = runBlocking {
+    fun voidExpensePayment(paymentId: String, reason: String): String = runBlocking(Dispatchers.IO) {
         try {
             val result = repository.voidExpensePayment(paymentId, reason)
             if (result.isSuccess) {
@@ -491,7 +492,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun createBuyer(jsonStr: String): String = runBlocking {
+    fun createBuyer(jsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val json = JSONObject(jsonStr)
             val name = json.getString("name")
@@ -521,7 +522,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun createSupplier(jsonStr: String): String = runBlocking {
+    fun createSupplier(jsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val json = JSONObject(jsonStr)
             val name = json.getString("name")
@@ -551,7 +552,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun createCycle(jsonStr: String): String = runBlocking {
+    fun createCycle(jsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val json = JSONObject(jsonStr)
             val crop = json.getString("crop")
@@ -585,7 +586,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun createHarvest(jsonStr: String): String = runBlocking {
+    fun createHarvest(jsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val json = JSONObject(jsonStr)
             val cycleId = json.getString("cycleId")
@@ -983,45 +984,43 @@ class FarmFinanceNativeBridge(
                 )
             }
 
-            // Step 5: ATOMIC TRANSACTIONAL COMMIT TO ROOM SQLITE
-            db.runInTransaction {
-                runBlocking(Dispatchers.IO) {
-                    // Clear all existing data atomically
-                    db.paymentDao().deleteAll()
-                    db.expensePaymentDao().deleteAll()
-                    db.saleDao().deleteAll()
-                    db.expenseDao().deleteAll()
-                    db.productionDao().deleteAllHarvests()
-                    db.productionDao().deleteAllCycles()
-                    db.buyerDao().deleteAll()
-                    db.supplierDao().deleteAll()
-                    db.auditLogDao().deleteAll()
+            // Step 5: ATOMIC TRANSACTIONAL COMMIT TO ROOM SQLITE VIA SUSPENDABLE withTransaction
+            db.withTransaction {
+                // Clear all existing data atomically
+                db.paymentDao().deleteAll()
+                db.expensePaymentDao().deleteAll()
+                db.saleDao().deleteAll()
+                db.expenseDao().deleteAll()
+                db.productionDao().deleteAllHarvests()
+                db.productionDao().deleteAllCycles()
+                db.buyerDao().deleteAll()
+                db.supplierDao().deleteAll()
+                db.auditLogDao().deleteAll()
 
-                    // Insert validated entities
-                    db.buyerDao().insertAll(buyerEntities)
-                    db.supplierDao().insertAll(supplierEntities)
-                    db.productionDao().insertAllCycles(cycleEntities)
-                    db.productionDao().insertAllHarvests(harvestEntities)
-                    db.saleDao().insertAll(saleEntities)
-                    db.paymentDao().insertAll(paymentEntities)
-                    db.expenseDao().insertAll(expenseEntities)
-                    db.expensePaymentDao().insertAll(expensePaymentEntities)
-                    db.auditLogDao().insertAll(auditLogEntities)
+                // Insert validated entities
+                db.buyerDao().insertAll(buyerEntities)
+                db.supplierDao().insertAll(supplierEntities)
+                db.productionDao().insertAllCycles(cycleEntities)
+                db.productionDao().insertAllHarvests(harvestEntities)
+                db.saleDao().insertAll(saleEntities)
+                db.paymentDao().insertAll(paymentEntities)
+                db.expenseDao().insertAll(expenseEntities)
+                db.expensePaymentDao().insertAll(expensePaymentEntities)
+                db.auditLogDao().insertAll(auditLogEntities)
 
-                    // Record restore audit event
-                    db.auditLogDao().insertAuditLog(
-                        AuditLogEntity(
-                            id = "audit_${UUID.randomUUID()}",
-                            timestamp = System.currentTimeMillis(),
-                            entityType = "BACKUP",
-                            entityId = "RESTORE",
-                            eventType = "RESTORE",
-                            summary = "Restored ${saleEntities.size} sales, ${paymentEntities.size} payments, ${expenseEntities.size} expenses from verified backup",
-                            metadataJson = "{\"salesCount\": ${saleEntities.size}, \"checksum\": \"$expectedChecksum\"}",
-                            appVersion = "1.0.0"
-                        )
+                // Record restore audit event
+                db.auditLogDao().insertAuditLog(
+                    AuditLogEntity(
+                        id = "audit_${UUID.randomUUID()}",
+                        timestamp = System.currentTimeMillis(),
+                        entityType = "BACKUP",
+                        entityId = "RESTORE",
+                        eventType = "RESTORE",
+                        summary = "Restored ${saleEntities.size} sales, ${paymentEntities.size} payments, ${expenseEntities.size} expenses from verified backup",
+                        metadataJson = "{\"salesCount\": ${saleEntities.size}, \"checksum\": \"$expectedChecksum\"}",
+                        appVersion = "1.0.0"
                     )
-                }
+                )
             }
 
             JSONObject().apply {
@@ -1047,31 +1046,29 @@ class FarmFinanceNativeBridge(
     @JavascriptInterface
     fun clearAllData(): String = runBlocking(Dispatchers.IO) {
         try {
-            db.runInTransaction {
-                runBlocking(Dispatchers.IO) {
-                    db.paymentDao().deleteAll()
-                    db.expensePaymentDao().deleteAll()
-                    db.saleDao().deleteAll()
-                    db.expenseDao().deleteAll()
-                    db.productionDao().deleteAllHarvests()
-                    db.productionDao().deleteAllCycles()
-                    db.buyerDao().deleteAll()
-                    db.supplierDao().deleteAll()
-                    db.auditLogDao().deleteAll()
+            db.withTransaction {
+                db.paymentDao().deleteAll()
+                db.expensePaymentDao().deleteAll()
+                db.saleDao().deleteAll()
+                db.expenseDao().deleteAll()
+                db.productionDao().deleteAllHarvests()
+                db.productionDao().deleteAllCycles()
+                db.buyerDao().deleteAll()
+                db.supplierDao().deleteAll()
+                db.auditLogDao().deleteAll()
 
-                    db.auditLogDao().insertAuditLog(
-                        AuditLogEntity(
-                            id = "audit_${UUID.randomUUID()}",
-                            timestamp = System.currentTimeMillis(),
-                            entityType = "DATABASE",
-                            entityId = "RESET",
-                            eventType = "DATABASE_RESET",
-                            summary = "All records cleared by user",
-                            metadataJson = "{}",
-                            appVersion = "1.0.0"
-                        )
+                db.auditLogDao().insertAuditLog(
+                    AuditLogEntity(
+                        id = "audit_${UUID.randomUUID()}",
+                        timestamp = System.currentTimeMillis(),
+                        entityType = "DATABASE",
+                        entityId = "RESET",
+                        eventType = "DATABASE_RESET",
+                        summary = "All records cleared by user",
+                        metadataJson = "{}",
+                        appVersion = "1.0.0"
                     )
-                }
+                )
             }
 
             JSONObject().apply {
@@ -1087,7 +1084,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun migrateFromLocalStorage(localStorageJsonStr: String): String = runBlocking {
+    fun migrateFromLocalStorage(localStorageJsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val root = JSONObject(localStorageJsonStr)
             val buyersArr = root.optJSONArray("buyers") ?: JSONArray()
