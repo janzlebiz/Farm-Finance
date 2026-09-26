@@ -32,8 +32,6 @@ import {
   Sprout,
   TrendingUp,
   MoreHorizontal,
-  Wifi,
-  Battery,
   Download,
   Users,
   History,
@@ -174,16 +172,6 @@ export default function App() {
         }`}
       >
         
-        {/* Android Status Bar */}
-        <div className="bg-emerald-900 text-white px-5 pt-3 pb-1 flex items-center justify-between text-[11px] font-semibold tracking-wider">
-          <span>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono opacity-80">4G</span>
-            <Wifi className="w-3.5 h-3.5 opacity-90" />
-            <Battery className="w-4 h-4 opacity-90" />
-          </div>
-        </div>
-
         {/* Android Material 3 Top App Bar */}
         <div className="bg-emerald-800 text-white px-5 py-3 shadow-md flex items-center justify-between">
           <div>
