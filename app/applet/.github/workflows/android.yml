@@ -1,0 +1,113 @@
+name: Build Standalone Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build & Package Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Build Web Application
+        run: |
+          if [ -f "package.json" ]; then
+            npm install --legacy-peer-deps --no-audit
+            npm run build
+          fi
+
+      - name: Determine Project Directory & Ensure Assets
+        id: prep
+        run: |
+          if [ -f "android/build.gradle.kts" ]; then
+            DIR="android"
+          elif [ -f "build.gradle.kts" ]; then
+            DIR="."
+          else
+            DIR=$(dirname $(find . -name "build.gradle.kts" -not -path "*/app/*" | head -n 1))
+          fi
+          echo "PROJECT_DIR=$DIR" >> $GITHUB_OUTPUT
+          echo "Selected Android Project Directory: $DIR"
+          cd "$DIR"
+
+          # 1. Ensure gradle.properties with AndroidX flags exists
+          if [ ! -f "gradle.properties" ]; then
+            touch gradle.properties
+          fi
+          grep -q "android.useAndroidX" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -q "android.nonTransitiveRClass" gradle.properties || echo "android.nonTransitiveRClass=true" >> gradle.properties
+
+          # 2. Ensure launcher icon resources exist for AAPT
+          mkdir -p app/src/main/res/drawable app/src/main/res/mipmap app/src/main/res/mipmap-anydpi-v26
+          echo '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#065F46" android:pathData="M0,0h108v108h-108z"/></vector>' > app/src/main/res/drawable/ic_launcher_background.xml
+          echo '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#34D399" android:pathData="M54,34c-7.73,0 -14,6.27 -14,14 0,4.42 2.05,8.36 5.25,10.92L45,80h18l-0.25,-21.08c3.2,-2.56 5.25,-6.5 5.25,-10.92 0,-7.73 -6.27,-14 -14,-14z"/></vector>' > app/src/main/res/drawable/ic_launcher_foreground.xml
+          ADAPTIVE='<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="@drawable/ic_launcher_background"/><foreground android:drawable="@drawable/ic_launcher_foreground"/></adaptive-icon>'
+          echo "$ADAPTIVE" > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          echo "$ADAPTIVE" > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+          echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher.xml
+          echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher_round.xml
+
+          # 3. Copy compiled web app assets directly into Android app assets
+          mkdir -p app/src/main/assets/www
+          if [ -d "../dist" ]; then
+            cp -r ../dist/* app/src/main/assets/www/
+          elif [ -d "dist" ]; then
+            cp -r dist/* app/src/main/assets/www/
+          fi
+          ls -la app/src/main/assets/www/
+
+          # 4. Ensure Gradle wrapper exists
+          if [ ! -f "gradlew" ]; then
+            echo "Generating Gradle wrapper..."
+            gradle wrapper --gradle-version 8.7 || true
+          fi
+          chmod +x gradlew || true
+
+      - name: Build Standalone Release APK
+        run: |
+          cd "${{ steps.prep.outputs.PROJECT_DIR }}"
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Prepare APK Output
+        id: output
+        run: |
+          mkdir -p build_outputs
+          APK_FILE=$(find . -path "*/build/outputs/apk/*" -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find . -name "*.apk" | head -n 1)
+          fi
+          echo "Found APK at: $APK_FILE"
+          cp "$APK_FILE" build_outputs/FarmFinance-v1.0.apk
+          ls -lh build_outputs/
+
+      - name: Upload Standalone APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FarmFinance-Standalone-APK
+          path: build_outputs/FarmFinance-v1.0.apk
+          if-no-files-found: error
+          retention-days: 90
