@@ -404,6 +404,54 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(!!reloadedCycle, 'Cycle must exist');
       assert(!!reloadedHarvest, 'Harvest must exist');
       assert(reloadedHarvest?.cycleId === cycle.id, 'Harvest must link to cycle');
+      assert(reloadedHarvest?.crop === 'Rice', 'Harvest crop must match');
+      assert(reloadedHarvest?.quantity === 1200, 'Harvest quantity must match');
+      assert(reloadedHarvest?.unit === 'kg', 'Harvest unit must match');
+      assert(reloadedHarvest?.gradeQuality === 'Grade 1', 'Harvest quality must match');
+    });
+
+    await executeTest('Lifecycle', 'Harvest History: Independent query & Multi-batch accumulation', () => {
+      StorageService.resetToCleanState();
+      const cycle1 = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Cycle Rice A',
+        startDate: '2026-06-01',
+        farmField: 'Field 1',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      const cycle2 = StorageService.createCycle({
+        crop: 'Copra',
+        cycleName: 'Cycle Coconut B',
+        startDate: '2026-07-01',
+        farmField: 'Grove 2',
+        area: 3.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+
+      StorageService.createHarvest({
+        cycleId: cycle1.id,
+        crop: 'Rice',
+        date: '2026-10-10',
+        quantity: 2500,
+        unit: 'kg',
+        gradeQuality: 'Standard Dry'
+      });
+      StorageService.createHarvest({
+        cycleId: cycle2.id,
+        crop: 'Copra',
+        date: '2026-10-12',
+        quantity: 800,
+        unit: 'kg',
+        gradeQuality: 'Tapahan Grade A'
+      });
+
+      const harvests = StorageService.getHarvests();
+      assert(harvests.length === 2, 'Harvest history must return all recorded harvests independently');
+      assert(harvests.some((h) => h.crop === 'Rice' && h.cycleId === cycle1.id), 'Rice harvest must link to cycle1');
+      assert(harvests.some((h) => h.crop === 'Copra' && h.cycleId === cycle2.id), 'Copra harvest must link to cycle2');
     });
 
     // ----------------------------------------------------
