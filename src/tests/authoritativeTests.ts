@@ -300,6 +300,83 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(exp?.supplierNameSnapshot === 'Harvester Crew', 'Supplier snapshot must match');
     });
 
+    await executeTest('Lifecycle', 'Expenses: ₱100 / ₱50 Paid -> Remaining ₱50 -> Pay Remaining ₱50 -> Fully Paid', () => {
+      StorageService.resetToCleanState();
+      const supplier = StorageService.createSupplier({ name: 'Agri Supply', contactNumber: '', address: '', notes: '', status: 'ACTIVE' });
+
+      // Expense = ₱100 (10,000 centavos), Paid = ₱50 (5,000 centavos), Remaining = ₱50 (5,000 centavos)
+      const expRes = StorageService.createExpense({
+        date: '2026-10-15',
+        category: 'Fertilizer',
+        amountIncurredCentavos: 10000,
+        amountPaidCentavos: 5000,
+        description: 'Urea sack',
+        supplierId: supplier.id
+      });
+      assert(!expRes.error, `Expense error: ${expRes.error}`);
+      const expenseId = expRes.expense!.id;
+
+      let db = StorageService.loadDatabase();
+      let exp = db.expenses.find((e) => e.id === expenseId)!;
+      let remaining = exp.amountIncurredCentavos - exp.amountPaidCentavos;
+      assert(remaining === 5000, 'Initial remaining balance must be ₱50.00 (5000 centavos)');
+
+      // Record second payment of ₱50 (5,000 centavos)
+      const payRes = StorageService.recordExpensePayment({
+        expenseId: exp.id,
+        amountCentavos: 5000,
+        date: '2026-10-16',
+        paymentMethod: 'CASH'
+      });
+      assert(!payRes.error, `Expense payment error: ${payRes.error}`);
+
+      db = StorageService.loadDatabase();
+      exp = db.expenses.find((e) => e.id === expenseId)!;
+      remaining = exp.amountIncurredCentavos - exp.amountPaidCentavos;
+      assert(exp.amountPaidCentavos === 10000, 'Total paid must now be ₱100.00 (10000 centavos)');
+      assert(remaining === 0, 'Remaining balance must be 0 after full settlement');
+    });
+
+    await executeTest('Lifecycle', 'Expenses: Validation: Reject Overpayment (> Remaining Balance)', () => {
+      StorageService.resetToCleanState();
+      const expRes = StorageService.createExpense({
+        date: '2026-10-15',
+        category: 'Fuel & Oil',
+        amountIncurredCentavos: 10000, // ₱100.00
+        amountPaidCentavos: 5000,      // ₱50.00
+        description: 'Diesel for water pump'
+      });
+      assert(!expRes.error, `Expense error: ${expRes.error}`);
+      const expenseId = expRes.expense!.id;
+
+      // Attempt payment of ₱60.00 (6,000 centavos) when remaining is only ₱50.00 (5,000 centavos)
+      const overpayRes = StorageService.recordExpensePayment({
+        expenseId,
+        amountCentavos: 6000,
+        date: '2026-10-16',
+        paymentMethod: 'CASH'
+      });
+      assert(!!overpayRes.error, 'Overpayment on expense must be rejected');
+      assert(overpayRes.error!.includes('exceeds remaining expense balance'), 'Error message must specify overpayment');
+    });
+
+    await executeTest('Lifecycle', 'Expenses: Other Farm Expenses: Requires and Preserves Specification', () => {
+      StorageService.resetToCleanState();
+      const expRes = StorageService.createExpense({
+        date: '2026-10-15',
+        category: 'Other Farm Expenses',
+        amountIncurredCentavos: 8500, // ₱85.00
+        amountPaidCentavos: 8500,
+        description: 'Bicycle tire repair for farm field transport'
+      });
+      assert(!expRes.error, `Expense error: ${expRes.error}`);
+
+      const db = StorageService.loadDatabase();
+      const exp = db.expenses.find((e) => e.id === expRes.expense?.id);
+      assert(exp?.category === 'Other Farm Expenses', 'Category must be Other Farm Expenses');
+      assert(exp?.description === 'Bicycle tire repair for farm field transport', 'Specified other description must match');
+    });
+
     await executeTest('Lifecycle', 'Production Cycle & Harvest Relationship', () => {
       StorageService.resetToCleanState();
       const cycle = StorageService.createCycle({

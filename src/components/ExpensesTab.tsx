@@ -10,7 +10,8 @@ import {
   Filter,
   Ban,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  CreditCard
 } from 'lucide-react';
 
 interface ExpensesTabProps {
@@ -18,6 +19,7 @@ interface ExpensesTabProps {
   categories: ExpenseCategory[];
   suppliers: Supplier[];
   onOpenNewExpense: () => void;
+  onOpenPayment?: (expense: Expense, remainingBalanceCentavos: number) => void;
   onReload: () => void;
 }
 
@@ -26,11 +28,13 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
   categories,
   suppliers,
   onOpenNewExpense,
+  onOpenPayment,
   onReload
 }) => {
   const [search, setSearch] = useState<string>('');
   const [cropFilter, setCropFilter] = useState<string>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
   // Compute summary totals for valid expenses
   const validExpenses = expenses.filter((e) => !e.isVoided);
@@ -45,6 +49,13 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
       if (cropFilter !== 'General' && e.crop !== cropFilter) return false;
     }
     if (categoryFilter !== 'ALL' && e.category !== categoryFilter) return false;
+    if (statusFilter !== 'ALL') {
+      const unpaid = e.amountIncurredCentavos - e.amountPaidCentavos;
+      if (statusFilter === 'PAID' && (e.isVoided || unpaid > 0)) return false;
+      if (statusFilter === 'PARTIALLY_PAID' && (e.isVoided || e.amountPaidCentavos === 0 || unpaid <= 0)) return false;
+      if (statusFilter === 'UNPAID' && (e.isVoided || e.amountPaidCentavos > 0)) return false;
+      if (statusFilter === 'VOIDED' && !e.isVoided) return false;
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       const matchDesc = e.description.toLowerCase().includes(q);
@@ -67,7 +78,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
   };
 
   return (
-    <div className="space-y-4 pb-16 animate-in fade-in duration-150">
+    <div className="space-y-4 pb-6 animate-in fade-in duration-150">
       
       {/* Top Banner: Incurred vs Cash Paid vs Unpaid */}
       <div className="bg-linear-to-r from-stone-900 to-amber-950 text-white p-5 rounded-2xl shadow-md">
@@ -121,27 +132,39 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
+        <div className="grid grid-cols-3 gap-2 text-xs">
           <select
             value={cropFilter}
             onChange={(e) => setCropFilter(e.target.value)}
-            className="px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white font-medium text-xs"
+            className="px-2 py-1.5 rounded-xl border border-slate-300 bg-white font-medium text-xs truncate"
           >
-            <option value="ALL">All Commodities</option>
-            <option value="Rice">🌾 Rice Tagged</option>
-            <option value="Copra">🥥 Copra Tagged</option>
-            <option value="General">General Farm</option>
+            <option value="ALL">All Crops</option>
+            <option value="Rice">🌾 Rice</option>
+            <option value="Copra">🥥 Copra</option>
+            <option value="General">General</option>
           </select>
 
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white font-medium text-xs flex-1 truncate"
+            className="px-2 py-1.5 rounded-xl border border-slate-300 bg-white font-medium text-xs truncate"
           >
-            <option value="ALL">All Categories ({categories.length})</option>
+            <option value="ALL">All Categories</option>
             {categories.map((c) => (
               <option key={c.id} value={c.name}>{c.name}</option>
             ))}
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-2 py-1.5 rounded-xl border border-slate-300 bg-white font-medium text-xs truncate"
+          >
+            <option value="ALL">All Status</option>
+            <option value="PAID">Paid</option>
+            <option value="PARTIALLY_PAID">Partially Paid</option>
+            <option value="UNPAID">Unpaid</option>
+            <option value="VOIDED">Voided</option>
           </select>
         </div>
       </div>
@@ -155,33 +178,58 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
       ) : (
         <div className="space-y-3">
           {filteredExpenses.map((expense) => {
-            const unpaid = expense.amountIncurredCentavos - expense.amountPaidCentavos;
+            const unpaid = Math.max(0, expense.amountIncurredCentavos - expense.amountPaidCentavos);
             const isVoided = expense.isVoided;
+            const isPaid = !isVoided && unpaid === 0;
+            const isPartiallyPaid = !isVoided && expense.amountPaidCentavos > 0 && unpaid > 0;
+            const isUnpaid = !isVoided && expense.amountPaidCentavos === 0;
 
             return (
               <div
                 key={expense.id}
-                className={`bg-white rounded-2xl p-4 border transition shadow-xs ${
+                className={`bg-white rounded-2xl p-4 border transition shadow-xs space-y-3 ${
                   isVoided ? 'border-slate-200 bg-slate-50/60 opacity-60' : 'border-slate-200'
                 }`}
               >
+                {/* Top Row: Category, Tag, Date, Status */}
                 <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-1.5">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-bold text-sm text-slate-900">{expense.category}</span>
                       {expense.crop && (
                         <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-semibold rounded">
                           {expense.crop === 'Rice' ? '🌾 Rice' : '🥥 Copra'}
                         </span>
                       )}
+                      {/* Status Badge */}
+                      {isVoided && (
+                        <span className="text-[10px] uppercase font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200">
+                          Voided
+                        </span>
+                      )}
+                      {isPaid && (
+                        <span className="text-[10px] uppercase font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          Paid
+                        </span>
+                      )}
+                      {isPartiallyPaid && (
+                        <span className="text-[10px] uppercase font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          Partially Paid
+                        </span>
+                      )}
+                      {isUnpaid && (
+                        <span className="text-[10px] uppercase font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                          Unpaid
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-700 mt-0.5 font-medium">{expense.description}</p>
+                    <p className="text-xs text-slate-800 font-medium">{expense.description}</p>
                     {expense.supplierNameSnapshot && (
                       <p className="text-[11px] text-slate-500">Payee: {expense.supplierNameSnapshot}</p>
                     )}
                   </div>
 
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <span className="font-extrabold text-sm text-slate-900 block">
                       {MoneyUtils.formatPesos(expense.amountIncurredCentavos)}
                     </span>
@@ -191,31 +239,45 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
                   </div>
                 </div>
 
-                {/* Paid vs Unpaid status */}
-                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-3">
-                    <span className="text-emerald-700 font-semibold">
-                      Paid: {MoneyUtils.formatPesos(expense.amountPaidCentavos)}
+                {/* Financial Summary: Incurred, Paid, Remaining */}
+                <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl text-center text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Total Incurred</span>
+                    <span className="font-bold text-slate-800">{MoneyUtils.formatPesos(expense.amountIncurredCentavos)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Amount Paid</span>
+                    <span className="font-bold text-emerald-700">{MoneyUtils.formatPesos(expense.amountPaidCentavos)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Remaining</span>
+                    <span className={`font-bold ${unpaid > 0 ? 'text-red-700' : 'text-slate-400'}`}>
+                      {MoneyUtils.formatPesos(unpaid)}
                     </span>
-                    {unpaid > 0 && (
-                      <span className="text-amber-800 font-bold">
-                        Unpaid: {MoneyUtils.formatPesos(unpaid)}
-                      </span>
+                  </div>
+                </div>
+
+                {/* Actions Row */}
+                <div className="pt-1 flex items-center justify-between text-xs">
+                  <div>
+                    {!isVoided && unpaid > 0 && onOpenPayment && (
+                      <button
+                        onClick={() => onOpenPayment(expense, unpaid)}
+                        className="px-3 py-1.5 bg-amber-800 hover:bg-amber-900 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition shadow-2xs"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        Record Payment ({MoneyUtils.formatPesos(unpaid)})
+                      </button>
                     )}
                   </div>
 
                   {!isVoided && (
                     <button
                       onClick={() => handleVoidExpense(expense)}
-                      className="text-[11px] text-slate-400 hover:text-red-600 flex items-center gap-1 transition"
+                      className="text-[11px] text-slate-400 hover:text-red-600 flex items-center gap-1 transition ml-auto"
                     >
                       <Ban className="w-3 h-3" /> Void
                     </button>
-                  )}
-                  {isVoided && (
-                    <span className="text-[10px] uppercase font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded">
-                      Voided
-                    </span>
                   )}
                 </div>
               </div>

@@ -10,7 +10,6 @@ interface ExpenseModalProps {
   cycles: ProductionCycle[];
   onClose: () => void;
   onSuccess: () => void;
-  onCategoryAdded: (newCat: ExpenseCategory) => void;
 }
 
 export const ExpenseModal: React.FC<ExpenseModalProps> = ({
@@ -18,8 +17,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   suppliers,
   cycles,
   onClose,
-  onSuccess,
-  onCategoryAdded
+  onSuccess
 }) => {
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [category, setCategory] = useState<string>(categories[0]?.name || 'Labor & Harvesting Wages');
@@ -34,23 +32,12 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
-  // New Category inline
-  const [isAddingCat, setIsAddingCat] = useState<boolean>(false);
-  const [newCatName, setNewCatName] = useState<string>('');
+  const isOtherCategory = category === 'Other Farm Expenses';
 
   const incurredCentavos = MoneyUtils.pesosToCentavos(incurredStr);
   const paidCentavos = MoneyUtils.pesosToCentavos(paidStr);
   const unpaidCentavos = Math.max(0, incurredCentavos - paidCentavos);
   const isPaidOverIncurred = paidCentavos > incurredCentavos;
-
-  const handleAddCategory = () => {
-    if (!newCatName.trim()) return;
-    const cat = StorageService.addCategory(newCatName.trim());
-    onCategoryAdded(cat);
-    setCategory(cat.name);
-    setIsAddingCat(false);
-    setNewCatName('');
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +49,11 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       return;
     }
     if (!description.trim()) {
-      setError('Description is required.');
+      setError(
+        isOtherCategory
+          ? 'Please specify the expense details for Other Farm Expenses.'
+          : 'Description is required.'
+      );
       return;
     }
 
@@ -197,38 +188,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
           {/* Category Selector */}
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-semibold text-slate-700">Category *</label>
-              <button
-                type="button"
-                onClick={() => setIsAddingCat(!isAddingCat)}
-                className="text-xs text-amber-800 hover:text-amber-950 font-semibold flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                {isAddingCat ? 'Cancel' : 'Custom Category'}
-              </button>
-            </div>
-
-            {isAddingCat ? (
-              <div className="flex gap-2 mb-2">
-                <input
-                  type="text"
-                  placeholder="New category name"
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                  className="flex-1 px-3 py-1.5 rounded-lg border border-amber-300 text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddCategory}
-                  disabled={!newCatName.trim()}
-                  className="px-3 py-1.5 bg-amber-900 text-white rounded-lg text-xs font-bold disabled:opacity-50"
-                >
-                  Add
-                </button>
-              </div>
-            ) : null}
-
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Category *</label>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
@@ -242,17 +202,28 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
             </select>
           </div>
 
-          {/* Description */}
+          {/* Description / Specify Other Expense */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Description *</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              {isOtherCategory ? 'Specify Other Expense *' : 'Description *'}
+            </label>
             <input
               type="text"
               required
-              placeholder="e.g. Hauling sacks from paddy to drying pavement"
+              placeholder={
+                isOtherCategory
+                  ? 'e.g. transportation, repairs, miscellaneous...'
+                  : 'e.g. Hauling sacks from paddy to drying pavement'
+              }
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-hidden focus:ring-2 focus:ring-amber-700"
             />
+            {isOtherCategory && (
+              <p className="text-[11px] text-amber-800 mt-1">
+                Please provide details describing this specific other farm expense.
+              </p>
+            )}
           </div>
 
           {/* Crop Tagging & Date */}

@@ -16,6 +16,7 @@ import { ReportsTab } from './components/ReportsTab';
 import { SaleModal } from './components/SaleModal';
 import { PaymentModal } from './components/PaymentModal';
 import { ExpenseModal } from './components/ExpenseModal';
+import { ExpensePaymentModal } from './components/ExpensePaymentModal';
 import { BackupModal } from './components/BackupModal';
 import { AuditModal } from './components/AuditModal';
 import { ContactsModal } from './components/ContactsModal';
@@ -34,15 +35,11 @@ import {
   MoreHorizontal,
   Download,
   Users,
-  History,
-  Maximize2,
-  Minimize2,
-  Smartphone
+  History
 } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [isPhoneFrame, setIsPhoneFrame] = useState<boolean>(true);
 
   // Database records
   const [sales, setSales] = useState<Sale[]>([]);
@@ -60,6 +57,10 @@ export default function App() {
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState<boolean>(false);
   const [paymentModalData, setPaymentModalData] = useState<{
     sale: Sale;
+    remainingBalanceCentavos: number;
+  } | null>(null);
+  const [expensePaymentModalData, setExpensePaymentModalData] = useState<{
+    expense: Expense;
     remainingBalanceCentavos: number;
   } | null>(null);
 
@@ -133,164 +134,140 @@ export default function App() {
     setPaymentModalData({ sale, remainingBalanceCentavos });
   };
 
+  const openPaymentForExpense = (expense: Expense, remainingBalanceCentavos: number) => {
+    setExpensePaymentModalData({ expense, remainingBalanceCentavos });
+  };
+
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-900 flex flex-col items-center justify-center p-0 sm:p-4 select-none">
+    <div className="h-screen h-dvh w-full max-w-full flex flex-col overflow-hidden bg-slate-50 text-slate-900 select-none">
       
-      {/* Top Desktop Bar (only when in desktop frame mode) */}
-      <div className="w-full max-w-md hidden sm:flex items-center justify-between text-xs text-slate-300 pb-2 px-2">
-        <div className="flex items-center gap-1.5 font-bold text-white">
-          <span>🌾 Farm Finance</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-800 text-emerald-100">Android v1.0</span>
+      {/* FIXED TOP / HEADER */}
+      <header className="shrink-0 bg-emerald-800 text-white px-4 py-3 shadow-md flex items-center justify-between z-20 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
+        <div>
+          <div className="text-[10px] uppercase font-bold tracking-widest text-emerald-200">
+            Farm Finance
+          </div>
+          <h1 className="text-base font-extrabold tracking-tight capitalize">
+            {activeTab === 'dashboard'
+              ? 'Dashboard'
+              : activeTab === 'sales'
+              ? 'Grain & Copra Sales'
+              : activeTab === 'receivables'
+              ? 'Outstanding Receivables'
+              : activeTab === 'expenses'
+              ? 'Farm Expenses'
+              : activeTab === 'production'
+              ? 'Production Cycles'
+              : 'Crop Profitability'}
+          </h1>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-1.5">
           <button
-            onClick={() => setIsPhoneFrame(!isPhoneFrame)}
-            className="hover:text-white flex items-center gap-1 transition"
-            title="Toggle Smartphone Frame"
+            onClick={() => setIsMoreMenuOpen(true)}
+            className="p-2 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 transition"
+            aria-label="More options"
           >
-            {isPhoneFrame ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-            {isPhoneFrame ? 'Expand' : 'Phone View'}
+            <MoreHorizontal className="w-4 h-4" />
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Main Container / Mobile Device Wrapper */}
-      <div
-        className={`w-full bg-slate-50 flex flex-col transition-all overflow-hidden ${
-          isPhoneFrame
-            ? 'sm:max-w-[420px] sm:h-[860px] sm:rounded-[36px] sm:border-[8px] sm:border-slate-800 sm:shadow-2xl sm:ring-1 sm:ring-slate-700/50'
-            : 'max-w-2xl min-h-screen sm:min-h-[90vh] sm:rounded-2xl shadow-xl'
-        }`}
-      >
-        
-        {/* Android Material 3 Top App Bar */}
-        <div className="bg-emerald-800 text-white px-5 py-3 shadow-md flex items-center justify-between">
-          <div>
-            <div className="text-[10px] uppercase font-bold tracking-widest text-emerald-200">
-              Farm Finance
-            </div>
-            <h1 className="text-base font-extrabold tracking-tight capitalize">
-              {activeTab === 'dashboard'
-                ? 'Dashboard'
-                : activeTab === 'sales'
-                ? 'Grain & Copra Sales'
-                : activeTab === 'receivables'
-                ? 'Outstanding Receivables'
-                : activeTab === 'expenses'
-                ? 'Farm Expenses'
-                : activeTab === 'production'
-                ? 'Production Cycles'
-                : 'Crop Profitability'}
-            </h1>
-          </div>
+      {/* SCROLLABLE CENTRAL CONTENT */}
+      <main className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-4 py-3 bg-slate-50 overscroll-contain">
+        {activeTab === 'dashboard' && (
+          <DashboardTab
+            onOpenNewSale={() => setIsSaleModalOpen(true)}
+            onOpenNewExpense={() => setIsExpenseModalOpen(true)}
+            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onOpenInstall={() => setIsInstallModalOpen(true)}
+          />
+        )}
 
-          <div className="flex items-center gap-1.5">
+        {activeTab === 'sales' && (
+          <SalesTab
+            sales={sales}
+            payments={payments}
+            onOpenNewSale={() => setIsSaleModalOpen(true)}
+            onOpenPayment={openPaymentForSale}
+            onReload={reloadData}
+          />
+        )}
+
+        {activeTab === 'receivables' && (
+          <ReceivablesTab
+            sales={sales}
+            payments={payments}
+            buyers={buyers}
+            onOpenPayment={openPaymentForSale}
+          />
+        )}
+
+        {activeTab === 'expenses' && (
+          <ExpensesTab
+            expenses={expenses}
+            categories={categories}
+            suppliers={suppliers}
+            onOpenNewExpense={() => setIsExpenseModalOpen(true)}
+            onOpenPayment={openPaymentForExpense}
+            onReload={reloadData}
+          />
+        )}
+
+        {activeTab === 'production' && (
+          <ProductionTab
+            cycles={cycles}
+            harvests={harvests}
+            expenses={expenses}
+            sales={sales}
+            onReload={reloadData}
+          />
+        )}
+
+        {activeTab === 'reports' && (
+          <ReportsTab
+            sales={sales}
+            expenses={expenses}
+            payments={payments}
+            cycles={cycles}
+          />
+        )}
+      </main>
+
+      {/* FIXED BOTTOM NAVIGATION */}
+      <nav className="shrink-0 bg-white border-t border-slate-200 px-2 py-1.5 flex items-center justify-around shadow-lg z-20 pb-[max(0.375rem,env(safe-area-inset-bottom,0px))]">
+        {[
+          { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
+          { id: 'sales', label: 'Sales', icon: CircleDollarSign },
+          { id: 'receivables', label: 'Receivables', icon: Clock },
+          { id: 'expenses', label: 'Expenses', icon: Receipt },
+          { id: 'production', label: 'Production', icon: Sprout },
+          { id: 'reports', label: 'Reports', icon: TrendingUp }
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
             <button
-              onClick={() => setIsMoreMenuOpen(true)}
-              className="p-2 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 transition"
-              aria-label="More options"
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-col items-center justify-center py-1 px-1.5 rounded-xl transition flex-1 ${
+                isActive
+                  ? 'text-emerald-800 font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
             >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Content Body (Scrollable Phone Screen) */}
-        <div className="flex-1 overflow-y-auto px-4 pt-3 pb-20 no-scrollbar bg-slate-50">
-          {activeTab === 'dashboard' && (
-            <DashboardTab
-              onOpenNewSale={() => setIsSaleModalOpen(true)}
-              onOpenNewExpense={() => setIsExpenseModalOpen(true)}
-              onNavigateToTab={(tab) => setActiveTab(tab)}
-              onOpenInstall={() => setIsInstallModalOpen(true)}
-            />
-          )}
-
-          {activeTab === 'sales' && (
-            <SalesTab
-              sales={sales}
-              payments={payments}
-              onOpenNewSale={() => setIsSaleModalOpen(true)}
-              onOpenPayment={openPaymentForSale}
-              onReload={reloadData}
-            />
-          )}
-
-          {activeTab === 'receivables' && (
-            <ReceivablesTab
-              sales={sales}
-              payments={payments}
-              buyers={buyers}
-              onOpenPayment={openPaymentForSale}
-            />
-          )}
-
-          {activeTab === 'expenses' && (
-            <ExpensesTab
-              expenses={expenses}
-              categories={categories}
-              suppliers={suppliers}
-              onOpenNewExpense={() => setIsExpenseModalOpen(true)}
-              onReload={reloadData}
-            />
-          )}
-
-          {activeTab === 'production' && (
-            <ProductionTab
-              cycles={cycles}
-              harvests={harvests}
-              expenses={expenses}
-              sales={sales}
-              onReload={reloadData}
-            />
-          )}
-
-          {activeTab === 'reports' && (
-            <ReportsTab
-              sales={sales}
-              expenses={expenses}
-              payments={payments}
-              cycles={cycles}
-            />
-          )}
-        </div>
-
-        {/* Android Material 3 Navigation Bar (Bottom Navigation) */}
-        <div className="bg-white border-t border-slate-200 px-2 py-1.5 flex items-center justify-around shadow-lg z-20">
-          {[
-            { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
-            { id: 'sales', label: 'Sales', icon: CircleDollarSign },
-            { id: 'receivables', label: 'Receivables', icon: Clock },
-            { id: 'expenses', label: 'Expenses', icon: Receipt },
-            { id: 'production', label: 'Production', icon: Sprout },
-            { id: 'reports', label: 'Reports', icon: TrendingUp }
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-col items-center justify-center py-1 px-1.5 rounded-xl transition flex-1 ${
-                  isActive
-                    ? 'text-emerald-800 font-bold'
-                    : 'text-slate-500 hover:text-slate-800'
+              <div
+                className={`p-1 rounded-full transition ${
+                  isActive ? 'bg-emerald-100 text-emerald-900' : ''
                 }`}
               >
-                <div
-                  className={`p-1 rounded-full transition ${
-                    isActive ? 'bg-emerald-100 text-emerald-900' : ''
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                </div>
-                <span className="text-[10px] mt-0.5 tracking-tight">{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-      </div>
+                <Icon className="w-4 h-4" />
+              </div>
+              <span className="text-[10px] mt-0.5 tracking-tight">{tab.label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* ================= MODALS & DRAWERS ================= */}
 
@@ -310,7 +287,7 @@ export default function App() {
         />
       )}
 
-      {/* Payment Modal */}
+      {/* Sale Payment Modal */}
       {paymentModalData && (
         <PaymentModal
           sale={paymentModalData.sale}
@@ -318,6 +295,19 @@ export default function App() {
           onClose={() => setPaymentModalData(null)}
           onSuccess={() => {
             setPaymentModalData(null);
+            reloadData();
+          }}
+        />
+      )}
+
+      {/* Expense Payment Modal */}
+      {expensePaymentModalData && (
+        <ExpensePaymentModal
+          expense={expensePaymentModalData.expense}
+          remainingBalanceCentavos={expensePaymentModalData.remainingBalanceCentavos}
+          onClose={() => setExpensePaymentModalData(null)}
+          onSuccess={() => {
+            setExpensePaymentModalData(null);
             reloadData();
           }}
         />
@@ -333,9 +323,6 @@ export default function App() {
           onSuccess={() => {
             setIsExpenseModalOpen(false);
             reloadData();
-          }}
-          onCategoryAdded={(cat) => {
-            setCategories((prev) => [...prev, cat]);
           }}
         />
       )}
@@ -446,6 +433,30 @@ export default function App() {
               Close Menu
             </button>
           </div>
+        </div>
+      )}
+
+      {/* First-time User Onboarding Wizard */}
+      {showOnboarding && (
+        <OnboardingWizard
+          onComplete={handleOnboardingComplete}
+          onSkip={handleOnboardingSkip}
+        />
+      )}
+
+      {/* Welcome Notification Toast */}
+      {welcomeToast && (
+        <div className="fixed bottom-20 left-4 right-4 z-40 bg-emerald-950 text-white p-3.5 rounded-2xl shadow-xl border border-emerald-700 flex items-center justify-between text-xs animate-in fade-in slide-in-from-bottom duration-300">
+          <div className="flex items-center gap-2.5">
+            <span className="text-base">🎉</span>
+            <p className="font-medium text-emerald-100 leading-snug">{welcomeToast}</p>
+          </div>
+          <button
+            onClick={() => setWelcomeToast(null)}
+            className="ml-2 text-emerald-400 hover:text-white text-xs font-bold shrink-0 p-1"
+          >
+            ✕
+          </button>
         </div>
       )}
 
