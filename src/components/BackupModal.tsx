@@ -135,13 +135,25 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
     );
     if (!confirmReset) return;
 
-    StorageService.resetToCleanState();
-    localStorage.removeItem('farm_finance_onboarding_dismissed');
-    setRestoreStatus({
-      success: true,
-      message: 'All records cleared. Database is now ready for a clean new user!'
-    });
-    onReload();
+    setIsProcessing(true);
+    try {
+      const res = StorageService.resetToCleanState();
+      localStorage.removeItem('farm_finance_onboarding_dismissed');
+      setRestoreStatus({
+        success: res.success,
+        message: res.message
+      });
+      if (res.success) {
+        onReload();
+      }
+    } catch (e: any) {
+      setRestoreStatus({
+        success: false,
+        message: e?.message || 'Failed to clear database.'
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -257,10 +269,11 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
           <div className="pt-3 border-t border-slate-200 space-y-2">
             <button
               onClick={handleResetClean}
-              className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-xl font-bold flex items-center justify-center gap-2 transition"
+              disabled={isProcessing}
+              className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 text-rose-800 border border-rose-300 rounded-xl font-bold flex items-center justify-center gap-2 transition"
             >
               <RotateCcw className="w-4 h-4 text-rose-600" />
-              Clear All Data (Start Fresh for New User)
+              {isProcessing ? 'Clearing Data...' : 'Clear All Data (Start Fresh for New User)'}
             </button>
           </div>
 

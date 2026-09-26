@@ -16,11 +16,14 @@ import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import com.farmfinance.app.bridge.FarmFinanceNativeBridge
 import com.farmfinance.app.data.local.FarmFinanceDatabase
 import com.farmfinance.app.data.repository.FarmRepository
 import com.farmfinance.app.security.KeystoreManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreHandler {
@@ -36,27 +39,29 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
     ) { result ->
         if (result.resultCode == RESULT_OK && result.data?.data != null) {
             val uri: Uri = result.data!!.data!!
-            try {
-                val jsonContent = nativeBridge.exportBackup()
-                contentResolver.openOutputStream(uri)?.use { outputStream ->
-                    outputStream.write(jsonContent.toByteArray(Charsets.UTF_8))
-                    outputStream.flush()
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val jsonContent = nativeBridge.exportBackup()
+                    contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        outputStream.write(jsonContent.toByteArray(Charsets.UTF_8))
+                        outputStream.flush()
+                    }
+                    dispatchWebEvent(
+                        "farm-finance-backup-result",
+                        JSONObject().apply {
+                            put("success", true)
+                            put("message", "Backup successfully exported to selected location.")
+                        }
+                    )
+                } catch (e: Exception) {
+                    dispatchWebEvent(
+                        "farm-finance-backup-result",
+                        JSONObject().apply {
+                            put("success", false)
+                            put("message", "Export failed: ${e.message ?: "Could not write file."}")
+                        }
+                    )
                 }
-                dispatchWebEvent(
-                    "farm-finance-backup-result",
-                    JSONObject().apply {
-                        put("success", true)
-                        put("message", "Backup successfully exported to selected location.")
-                    }
-                )
-            } catch (e: Exception) {
-                dispatchWebEvent(
-                    "farm-finance-backup-result",
-                    JSONObject().apply {
-                        put("success", false)
-                        put("message", "Export failed: ${e.message ?: "Could not write file."}")
-                    }
-                )
             }
         } else {
             // User cancelled
@@ -76,35 +81,37 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
     ) { result ->
         if (result.resultCode == RESULT_OK && result.data?.data != null) {
             val uri: Uri = result.data!!.data!!
-            try {
-                val backupJson = contentResolver.openInputStream(uri)?.use { inputStream ->
-                    inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                } ?: throw IllegalStateException("Could not read selected backup file.")
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val backupJson = contentResolver.openInputStream(uri)?.use { inputStream ->
+                        inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    } ?: throw IllegalStateException("Could not read selected backup file.")
 
-                val restoreResultJson = nativeBridge.restoreBackup(backupJson)
-                val resultObj = JSONObject(restoreResultJson)
-                val success = resultObj.optBoolean("success", false)
-                val message = if (success) {
-                    resultObj.optString("message", "Database successfully restored.")
-                } else {
-                    resultObj.optString("error", "Restore failed: Invalid or altered backup file.")
+                    val restoreResultJson = nativeBridge.restoreBackup(backupJson)
+                    val resultObj = JSONObject(restoreResultJson)
+                    val success = resultObj.optBoolean("success", false)
+                    val message = if (success) {
+                        resultObj.optString("message", "Database successfully restored.")
+                    } else {
+                        resultObj.optString("error", "Restore failed: Invalid or altered backup file.")
+                    }
+
+                    dispatchWebEvent(
+                        "farm-finance-restore-result",
+                        JSONObject().apply {
+                            put("success", success)
+                            put("message", message)
+                        }
+                    )
+                } catch (e: Exception) {
+                    dispatchWebEvent(
+                        "farm-finance-restore-result",
+                        JSONObject().apply {
+                            put("success", false)
+                            put("message", "Restore failed: ${e.message ?: "Invalid file."}")
+                        }
+                    )
                 }
-
-                dispatchWebEvent(
-                    "farm-finance-restore-result",
-                    JSONObject().apply {
-                        put("success", success)
-                        put("message", message)
-                    }
-                )
-            } catch (e: Exception) {
-                dispatchWebEvent(
-                    "farm-finance-restore-result",
-                    JSONObject().apply {
-                        put("success", false)
-                        put("message", "Restore failed: ${e.message ?: "Invalid file."}")
-                    }
-                )
             }
         } else {
             // User cancelled

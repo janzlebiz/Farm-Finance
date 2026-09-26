@@ -1117,9 +1117,28 @@ export const StorageService = {
   },
 
   // Reset to clean production state (empty database, no demo records)
-  resetToCleanState(): void {
+  resetToCleanState(): { success: boolean; message: string } {
+    const bridge = getNativeBridge();
+    if (bridge && typeof bridge.clearAllData === 'function') {
+      try {
+        const resStr = bridge.clearAllData();
+        const resObj = JSON.parse(resStr);
+        if (resObj.success) {
+          const clean = this.getInitialData();
+          this.saveMemoryDatabase(clean);
+          return { success: true, message: resObj.message || 'All records cleared.' };
+        } else {
+          return { success: false, message: resObj.error || 'Failed to clear native database.' };
+        }
+      } catch (e: any) {
+        console.error('Failed to clear native database:', e);
+        return { success: false, message: e.message || 'Failed to clear native database.' };
+      }
+    }
+
     const clean = this.getInitialData();
     this.saveMemoryDatabase(clean);
+    return { success: true, message: 'All records cleared. Database is now ready for a clean new user!' };
   },
 
   // CSV Generation for all major datasets

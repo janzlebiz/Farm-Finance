@@ -9,6 +9,7 @@ import com.farmfinance.app.domain.calculator.FinancialCalculator
 import com.farmfinance.app.domain.model.Money
 import com.farmfinance.app.domain.model.PaymentMethod
 import com.farmfinance.app.security.KeystoreManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -619,7 +620,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun exportBackup(): String = runBlocking {
+    fun exportBackup(): String = runBlocking(Dispatchers.IO) {
         try {
             val stateJsonStr = getDatabaseState()
             val stateObj = JSONObject(stateJsonStr)
@@ -663,7 +664,7 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
-    fun restoreBackup(backupJsonStr: String): String = runBlocking {
+    fun restoreBackup(backupJsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             // Step 1: Parse JSON
             val root = JSONObject(backupJsonStr)
@@ -984,7 +985,7 @@ class FarmFinanceNativeBridge(
 
             // Step 5: ATOMIC TRANSACTIONAL COMMIT TO ROOM SQLITE
             db.runInTransaction {
-                runBlocking {
+                runBlocking(Dispatchers.IO) {
                     // Clear all existing data atomically
                     db.paymentDao().deleteAll()
                     db.expensePaymentDao().deleteAll()
@@ -1039,6 +1040,48 @@ class FarmFinanceNativeBridge(
             JSONObject().apply {
                 put("success", false)
                 put("error", "Restore rejected: ${e.message}")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun clearAllData(): String = runBlocking(Dispatchers.IO) {
+        try {
+            db.runInTransaction {
+                runBlocking(Dispatchers.IO) {
+                    db.paymentDao().deleteAll()
+                    db.expensePaymentDao().deleteAll()
+                    db.saleDao().deleteAll()
+                    db.expenseDao().deleteAll()
+                    db.productionDao().deleteAllHarvests()
+                    db.productionDao().deleteAllCycles()
+                    db.buyerDao().deleteAll()
+                    db.supplierDao().deleteAll()
+                    db.auditLogDao().deleteAll()
+
+                    db.auditLogDao().insertAuditLog(
+                        AuditLogEntity(
+                            id = "audit_${UUID.randomUUID()}",
+                            timestamp = System.currentTimeMillis(),
+                            entityType = "DATABASE",
+                            entityId = "RESET",
+                            eventType = "DATABASE_RESET",
+                            summary = "All records cleared by user",
+                            metadataJson = "{}",
+                            appVersion = "1.0.0"
+                        )
+                    )
+                }
+            }
+
+            JSONObject().apply {
+                put("success", true)
+                put("message", "All records cleared. Database is now ready for a clean new user!")
+            }.toString()
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Failed to clear database.")
             }.toString()
         }
     }
