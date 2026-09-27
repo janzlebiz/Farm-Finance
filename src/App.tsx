@@ -322,6 +322,9 @@ export default function App() {
             setIsExpenseModalOpen(false);
             reloadData();
           }}
+          onSupplierAdded={(newSupplier) => {
+            setSuppliers((prev) => [newSupplier, ...prev.filter((s) => s.id !== newSupplier.id)]);
+          }}
         />
       )}
 

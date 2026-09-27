@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Supplier, ExpenseCategory, PaymentMethod, ProductionCycle } from '../types';
 import { MoneyUtils } from '../utils/money';
 import { StorageService } from '../services/storage';
@@ -10,6 +10,7 @@ interface ExpenseModalProps {
   cycles: ProductionCycle[];
   onClose: () => void;
   onSuccess: () => void;
+  onSupplierAdded?: (supplier: Supplier) => void;
 }
 
 export const ExpenseModal: React.FC<ExpenseModalProps> = ({
@@ -17,8 +18,10 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   suppliers,
   cycles,
   onClose,
-  onSuccess
+  onSuccess,
+  onSupplierAdded
 }) => {
+  const [availableSuppliers, setAvailableSuppliers] = useState<Supplier[]>(suppliers);
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [category, setCategory] = useState<string>(categories[0]?.name || 'Labor & Harvesting Wages');
   const [incurredStr, setIncurredStr] = useState<string>('');
@@ -31,6 +34,39 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [reference, setReference] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  // New Supplier / Payee inline creation state
+  const [isAddingSupplier, setIsAddingSupplier] = useState<boolean>(false);
+  const [newSupplierName, setNewSupplierName] = useState<string>('');
+  const [newSupplierContact, setNewSupplierContact] = useState<string>('');
+
+  useEffect(() => {
+    setAvailableSuppliers(suppliers);
+  }, [suppliers]);
+
+  const handleCreateNewSupplier = () => {
+    if (!newSupplierName.trim()) return;
+    setError(null);
+    try {
+      const created = StorageService.createSupplier({
+        name: newSupplierName.trim(),
+        contactNumber: newSupplierContact.trim(),
+        address: '',
+        notes: '',
+        status: 'ACTIVE'
+      });
+      setAvailableSuppliers((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+      setSupplierId(created.id);
+      setIsAddingSupplier(false);
+      setNewSupplierName('');
+      setNewSupplierContact('');
+      if (onSupplierAdded) {
+        onSupplierAdded(created);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to create supplier');
+    }
+  };
 
   const isOtherCategory = category === 'Other Farm Expenses';
 
@@ -255,19 +291,84 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
           {/* Supplier / Payee */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Payee / Supplier</label>
-            <select
-              value={supplierId}
-              onChange={(e) => setSupplierId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-hidden focus:ring-2 focus:ring-amber-700 bg-white"
-            >
-              <option value="">None / Direct Worker</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.contactNumber || 'Contact'})
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700">Payee / Supplier</label>
+              {!isAddingSupplier && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingSupplier(true)}
+                  className="text-[11px] font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>+ New Payee</span>
+                </button>
+              )}
+            </div>
+
+            {isAddingSupplier ? (
+              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-950">Add New Supplier / Payee</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingSupplier(false);
+                      setNewSupplierName('');
+                      setNewSupplierContact('');
+                    }}
+                    className="text-xs text-slate-500 hover:text-slate-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Supplier / Payee Name *"
+                    value={newSupplierName}
+                    onChange={(e) => setNewSupplierName(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-700"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Contact Number (optional)"
+                    value={newSupplierContact}
+                    onChange={(e) => setNewSupplierContact(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-700"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateNewSupplier}
+                  disabled={!newSupplierName.trim()}
+                  className="w-full py-1.5 bg-amber-900 hover:bg-amber-950 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition"
+                >
+                  Save & Select Payee
+                </button>
+              </div>
+            ) : (
+              <select
+                value={supplierId}
+                onChange={(e) => {
+                  if (e.target.value === '__NEW__') {
+                    setIsAddingSupplier(true);
+                  } else {
+                    setSupplierId(e.target.value);
+                  }
+                }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-hidden focus:ring-2 focus:ring-amber-700 bg-white"
+              >
+                <option value="">None / Direct Worker</option>
+                {availableSuppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.contactNumber || 'Contact'})
+                  </option>
+                ))}
+                <option value="__NEW__" className="font-bold text-amber-800">
+                  + Add New Supplier / Payee...
                 </option>
-              ))}
-            </select>
+              </select>
+            )}
           </div>
 
           {/* Payment Method & Reference */}
