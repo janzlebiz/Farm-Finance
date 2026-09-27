@@ -347,9 +347,13 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
                     e.stopPropagation();
                     setSelectedHarvestForDetails(h);
                   }}
-                  className="flex items-center justify-between text-xs bg-emerald-50/50 hover:bg-emerald-100/60 cursor-pointer px-2.5 py-1.5 rounded-lg border border-emerald-100 transition"
+                  className={`flex items-center justify-between text-xs cursor-pointer px-2.5 py-1.5 rounded-lg border transition ${
+                    isClosed
+                      ? 'bg-slate-100/70 hover:bg-slate-100 border-slate-200 text-slate-800'
+                      : 'bg-emerald-50/50 hover:bg-emerald-100/60 border-emerald-100'
+                  }`}
                 >
-                  <span className="font-medium text-emerald-950">
+                  <span className={`font-medium ${isClosed ? 'text-slate-800' : 'text-emerald-950'}`}>
                     {h.quantity.toLocaleString()} {h.unit} • {h.gradeQuality || 'Standard'}
                   </span>
                   <div className="flex items-center gap-1">
