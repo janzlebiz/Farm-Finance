@@ -12,6 +12,7 @@ interface CycleDetailsModalProps {
   onClose: () => void;
   onEdit: () => void;
   onSelectHarvest?: (harvest: Harvest) => void;
+  onArchive?: () => void;
 }
 
 export const CycleDetailsModal: React.FC<CycleDetailsModalProps> = ({
@@ -21,7 +22,8 @@ export const CycleDetailsModal: React.FC<CycleDetailsModalProps> = ({
   sales,
   onClose,
   onEdit,
-  onSelectHarvest
+  onSelectHarvest,
+  onArchive
 }) => {
   const cycleHarvests = harvests.filter((h) => h.cycleId === cycle.id);
   const totalHarvestQty = cycleHarvests.reduce((acc, h) => acc + h.quantity, 0);
@@ -206,8 +208,18 @@ export const CycleDetailsModal: React.FC<CycleDetailsModalProps> = ({
                 <span>Edit Cycle Details</span>
               </button>
             ) : (
-              <div className="flex-1 py-2.5 bg-slate-50 text-slate-500 font-semibold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-1.5">
-                <span>Closed Record (Read-Only)</span>
+              <div className="flex-1 flex flex-col gap-1.5">
+                <div className="py-2.5 bg-slate-50 text-slate-500 font-semibold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-1.5">
+                  <span>Closed Record (Read-Only)</span>
+                </div>
+                {(cycle.status === 'COMPLETED' || cycle.status === 'CANCELLED') && onArchive && (
+                  <button
+                    onClick={onArchive}
+                    className="py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1 transition"
+                  >
+                    <span>Archive Cycle</span>
+                  </button>
+                )}
               </div>
             )}
             <button

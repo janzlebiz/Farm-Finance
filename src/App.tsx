@@ -172,7 +172,7 @@ export default function App() {
       </header>
 
       {/* SCROLLABLE CENTRAL CONTENT */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-4 py-3 bg-slate-50 overscroll-contain">
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 py-3 bg-slate-50 overscroll-contain">
         {activeTab === 'dashboard' && (
           <DashboardTab
             onOpenNewSale={() => setIsSaleModalOpen(true)}

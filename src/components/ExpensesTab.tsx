@@ -78,10 +78,10 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
   };
 
   return (
-    <div className="space-y-4 pb-6 animate-in fade-in duration-150">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden space-y-4 animate-in fade-in duration-150">
       
       {/* Top Banner: Incurred vs Cash Paid vs Unpaid */}
-      <div className="bg-linear-to-r from-stone-900 to-amber-950 text-white p-5 rounded-2xl shadow-md">
+      <div className="bg-linear-to-r from-stone-900 to-amber-950 text-white p-5 rounded-2xl shadow-md shrink-0">
         <div className="text-xs uppercase tracking-wider text-amber-200 font-semibold mb-1">
           Total Farm Expenditures
         </div>
@@ -105,7 +105,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
       </div>
 
       {/* Header & Add Button */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h2 className="text-base font-bold text-slate-900">Recorded Expenses</h2>
           <p className="text-xs text-slate-500">Inputs, wages, fuels, supplies & machinery</p>
@@ -120,7 +120,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
       </div>
 
       {/* Search & Filters */}
-      <div className="space-y-2">
+      <div className="space-y-2 shrink-0">
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
           <input
@@ -171,12 +171,12 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
 
       {/* Expense List */}
       {filteredExpenses.length === 0 ? (
-        <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+        <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 shrink-0">
           <p className="text-sm font-semibold text-slate-600">No expenses found</p>
           <p className="text-xs text-slate-400 mt-1">Record a new farm expense to begin tracking.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex-1 overflow-y-auto min-h-0 space-y-3 pb-16 pr-1">
           {filteredExpenses.map((expense) => {
             const unpaid = Math.max(0, expense.amountIncurredCentavos - expense.amountPaidCentavos);
             const isVoided = expense.isVoided;

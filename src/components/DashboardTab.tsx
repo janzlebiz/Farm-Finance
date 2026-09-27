@@ -36,7 +36,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const netCashFlowCentavos = metrics.cashReceivedCentavos - metrics.cashPaidCentavos;
 
   return (
-    <div className="space-y-4 pb-12 animate-in fade-in duration-150">
+    <div className="flex-1 overflow-y-auto space-y-4 pb-12 animate-in fade-in duration-150">
       
       {/* Date Filter Bar */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs font-semibold">

@@ -247,11 +247,173 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   const cycleMap = new Map<string, ProductionCycle>();
   cycles.forEach((c) => cycleMap.set(c.id, c));
 
+  const liveCycles = cycles.filter((c) => !['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(c.status));
+  const closedCycles = cycles.filter((c) => ['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(c.status));
+
+  const liveHarvests = harvests.filter((h) => {
+    const cycle = cycleMap.get(h.cycleId);
+    return !cycle || !['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(cycle.status);
+  });
+  const closedHarvests = harvests.filter((h) => {
+    const cycle = cycleMap.get(h.cycleId);
+    return cycle && ['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(cycle.status);
+  });
+
+  const renderCycleCard = (c: ProductionCycle) => {
+    const cycleExpenses = expenses.filter((e) => !e.isVoided && e.cycleId === c.id);
+    const totalCycleCostCentavos = cycleExpenses.reduce((acc, e) => acc + e.amountIncurredCentavos, 0);
+
+    const cycleHarvests = harvests.filter((h) => h.cycleId === c.id);
+    const totalHarvestQty = cycleHarvests.reduce((acc, h) => acc + h.quantity, 0);
+
+    const cycleSales = sales.filter((s) => !s.isVoided && s.cycleId === c.id);
+    const cycleRevenueCentavos = cycleSales.reduce((acc, s) => acc + s.grossAmountCentavos, 0);
+
+    const isClosed = ['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(c.status);
+
+    return (
+      <div
+        key={c.id}
+        onClick={() => setSelectedCycleForDetails(c)}
+        className={`bg-white rounded-2xl p-4 border transition space-y-3 cursor-pointer ${
+          c.status === 'ARCHIVED'
+            ? 'border-slate-200 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300'
+            : isClosed
+            ? 'border-slate-200 hover:border-slate-300'
+            : 'border-slate-200 hover:border-emerald-400 hover:shadow-xs'
+        }`}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-base">{c.crop === 'Rice' ? '🌾' : '🥥'}</span>
+              <h3 className="font-bold text-sm text-slate-900">{c.cycleName}</h3>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Field: <strong>{c.farmField}</strong> • {c.area} {c.areaUnit}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
+              c.status === 'ARCHIVED'
+                ? 'bg-slate-200 text-slate-700'
+                : isClosed
+                ? 'bg-slate-100 text-slate-600'
+                : 'bg-emerald-100 text-emerald-800'
+            }`}>
+              {c.status}
+            </span>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </div>
+        </div>
+
+        {/* Cycle Financial & Yield Metrics */}
+        <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs">
+          <div>
+            <span className="text-slate-500 block text-[11px]">Total Harvested</span>
+            <span className="font-bold text-slate-900">
+              {totalHarvestQty > 0 ? `${totalHarvestQty.toLocaleString()} kg` : 'None yet'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-500 block text-[11px]">Direct Cycle Costs</span>
+            <span className="font-semibold text-amber-900">
+              {MoneyUtils.formatPesos(totalCycleCostCentavos)}
+            </span>
+          </div>
+          <div className="text-right">
+            <span className="text-slate-500 block text-[11px]">Cycle Revenue</span>
+            <span className="font-bold text-emerald-800">
+              {MoneyUtils.formatPesos(cycleRevenueCentavos)}
+            </span>
+          </div>
+        </div>
+
+        {/* Harvest Log summary */}
+        {cycleHarvests.length > 0 && (
+          <div className="pt-1">
+            <span className="text-[11px] font-semibold text-slate-600 uppercase block mb-1">
+              Recorded Harvest Batches:
+            </span>
+            <div className="space-y-1">
+              {cycleHarvests.map((h) => (
+                <div
+                  key={h.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedHarvestForDetails(h);
+                  }}
+                  className="flex items-center justify-between text-xs bg-emerald-50/50 hover:bg-emerald-100/60 cursor-pointer px-2.5 py-1.5 rounded-lg border border-emerald-100 transition"
+                >
+                  <span className="font-medium text-emerald-950">
+                    {h.quantity.toLocaleString()} {h.unit} • {h.gradeQuality || 'Standard'}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-500">{DateUtils.formatDisplayDate(h.date)}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderHarvestCard = (h: Harvest) => {
+    const cycle = cycleMap.get(h.cycleId);
+    const isClosed = cycle && ['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(cycle.status);
+    return (
+      <div
+        key={h.id}
+        onClick={() => setSelectedHarvestForDetails(h)}
+        className={`rounded-2xl p-4 border cursor-pointer transition space-y-2 ${
+          isClosed
+            ? 'bg-slate-50/50 border-slate-200 hover:border-slate-300'
+            : 'bg-white border-slate-200 hover:border-amber-400 hover:shadow-xs'
+        }`}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-base">{h.crop === 'Rice' ? '🌾' : '🥥'}</span>
+              <h3 className="font-bold text-sm text-slate-900">{h.crop} Harvest</h3>
+              {h.gradeQuality && (
+                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-semibold flex items-center gap-1">
+                  <Award className="w-3 h-3 text-amber-700" />
+                  {h.gradeQuality}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Cycle: <strong className="text-slate-700">{cycle ? cycle.cycleName : 'Unlinked Cycle'}</strong>
+              {cycle && ` (${cycle.farmField})`}
+            </p>
+          </div>
+
+          <div className="text-right flex items-center gap-1.5">
+            <div>
+              <span className="font-extrabold text-sm text-amber-950 block">
+                {h.quantity.toLocaleString()} {h.unit}
+              </span>
+              <span className="text-[11px] text-slate-400 block">
+                {DateUtils.formatDisplayDate(h.date)}
+              </span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-4 pb-16 animate-in fade-in duration-150">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden space-y-4 animate-in fade-in duration-150">
       
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h2 className="text-base font-bold text-slate-900">Crop Production & Harvests</h2>
           <p className="text-xs text-slate-500">Plan seasons, monitor fields & track recorded yields</p>
@@ -275,7 +437,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
       </div>
 
       {/* Sub-section Navigation Tabs */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-slate-200 shrink-0">
         <button
           onClick={() => setActiveSection('cycles')}
           className={`py-2 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 transition ${
@@ -302,7 +464,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
 
       {/* SECTION 1: PRODUCTION CYCLES */}
       {activeSection === 'cycles' && (
-        <div className="space-y-3">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {cycles.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-3">
               <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center">
@@ -323,104 +485,34 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
               </button>
             </div>
           ) : (
-            cycles.map((c) => {
-              // Direct expenses for this cycle
-              const cycleExpenses = expenses.filter((e) => !e.isVoided && e.cycleId === c.id);
-              const totalCycleCostCentavos = cycleExpenses.reduce((acc, e) => acc + e.amountIncurredCentavos, 0);
-
-              // Harvests for this cycle
-              const cycleHarvests = harvests.filter((h) => h.cycleId === c.id);
-              const totalHarvestQty = cycleHarvests.reduce((acc, h) => acc + h.quantity, 0);
-
-              // Sales linked to this cycle
-              const cycleSales = sales.filter((s) => !s.isVoided && s.cycleId === c.id);
-              const cycleRevenueCentavos = cycleSales.reduce((acc, s) => acc + s.grossAmountCentavos, 0);
-
-              return (
-                <div
-                  key={c.id}
-                  onClick={() => setSelectedCycleForDetails(c)}
-                  className="bg-white rounded-2xl p-4 border border-slate-200 hover:border-emerald-400 hover:shadow-xs cursor-pointer transition space-y-3"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">{c.crop === 'Rice' ? '🌾' : '🥥'}</span>
-                        <h3 className="font-bold text-sm text-slate-900">{c.cycleName}</h3>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Field: <strong>{c.farmField}</strong> • {c.area} {c.areaUnit}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold uppercase">
-                        {c.status}
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-slate-400" />
-                    </div>
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-4 pr-1 pb-16">
+              {/* Active / Live section */}
+              {liveCycles.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Active & Operational Seasons</h4>
+                  <div className="space-y-3">
+                    {liveCycles.map(renderCycleCard)}
                   </div>
-
-                  {/* Cycle Financial & Yield Metrics */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs">
-                    <div>
-                      <span className="text-slate-500 block text-[11px]">Total Harvested</span>
-                      <span className="font-bold text-slate-900">
-                        {totalHarvestQty > 0 ? `${totalHarvestQty.toLocaleString()} kg` : 'None yet'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block text-[11px]">Direct Cycle Costs</span>
-                      <span className="font-semibold text-amber-900">
-                        {MoneyUtils.formatPesos(totalCycleCostCentavos)}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-slate-500 block text-[11px]">Cycle Revenue</span>
-                      <span className="font-bold text-emerald-800">
-                        {MoneyUtils.formatPesos(cycleRevenueCentavos)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Harvest Log summary (Kept inside production cycles per instructions) */}
-                  {cycleHarvests.length > 0 && (
-                    <div className="pt-1">
-                      <span className="text-[11px] font-semibold text-slate-600 uppercase block mb-1">
-                        Recorded Harvest Batches:
-                      </span>
-                      <div className="space-y-1">
-                        {cycleHarvests.map((h) => (
-                          <div
-                            key={h.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedHarvestForDetails(h);
-                            }}
-                            className="flex items-center justify-between text-xs bg-emerald-50/50 hover:bg-emerald-100/60 cursor-pointer px-2.5 py-1.5 rounded-lg border border-emerald-100 transition"
-                          >
-                            <span className="font-medium text-emerald-950">
-                              {h.quantity.toLocaleString()} {h.unit} • {h.gradeQuality || 'Standard'}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-slate-500">{DateUtils.formatDisplayDate(h.date)}</span>
-                              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
-              );
-            })
+              )}
+
+              {/* Closed / Archived section */}
+              {closedCycles.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Closed & Archived Records</h4>
+                  <div className="space-y-3">
+                    {closedCycles.map(renderCycleCard)}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
 
       {/* SECTION 2: HARVEST HISTORY (INDEPENDENT LIST) */}
       {activeSection === 'harvests' && (
-        <div className="space-y-3">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {harvests.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-3">
               <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-800 mx-auto flex items-center justify-center">
@@ -441,47 +533,27 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
               </button>
             </div>
           ) : (
-            harvests.map((h) => {
-              const cycle = cycleMap.get(h.cycleId);
-              return (
-                <div
-                  key={h.id}
-                  onClick={() => setSelectedHarvestForDetails(h)}
-                  className="bg-white rounded-2xl p-4 border border-slate-200 hover:border-amber-400 hover:shadow-xs cursor-pointer transition space-y-2"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">{h.crop === 'Rice' ? '🌾' : '🥥'}</span>
-                        <h3 className="font-bold text-sm text-slate-900">{h.crop} Harvest</h3>
-                        {h.gradeQuality && (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-semibold flex items-center gap-1">
-                            <Award className="w-3 h-3 text-amber-700" />
-                            {h.gradeQuality}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Cycle: <strong className="text-slate-700">{cycle ? cycle.cycleName : 'Unlinked Cycle'}</strong>
-                        {cycle && ` (${cycle.farmField})`}
-                      </p>
-                    </div>
-
-                    <div className="text-right flex items-center gap-1.5">
-                      <div>
-                        <span className="font-extrabold text-sm text-amber-950 block">
-                          {h.quantity.toLocaleString()} {h.unit}
-                        </span>
-                        <span className="text-[11px] text-slate-400 block">
-                          {DateUtils.formatDisplayDate(h.date)}
-                        </span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-slate-400" />
-                    </div>
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-4 pr-1 pb-16">
+              {/* Live/editable harvests */}
+              {liveHarvests.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider">Active Yield Batches</h4>
+                  <div className="space-y-3">
+                    {liveHarvests.map(renderHarvestCard)}
                   </div>
                 </div>
-              );
-            })
+              )}
+
+              {/* Closed/read-only harvests */}
+              {closedHarvests.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Historical / Closed Yields</h4>
+                  <div className="space-y-3">
+                    {closedHarvests.map(renderHarvestCard)}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -500,6 +572,15 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
           }}
           onSelectHarvest={(h) => {
             setSelectedHarvestForDetails(h);
+          }}
+          onArchive={() => {
+            try {
+              StorageService.archiveCycle(selectedCycleForDetails.id);
+              setSelectedCycleForDetails(null);
+              onReload();
+            } catch (err: any) {
+              alert(err?.message || 'Failed to archive cycle.');
+            }
           }}
         />
       )}

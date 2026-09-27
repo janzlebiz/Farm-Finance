@@ -62,10 +62,10 @@ export const SalesTab: React.FC<SalesTabProps> = ({
   };
 
   return (
-    <div className="space-y-4 pb-16 animate-in fade-in duration-150">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden space-y-4 animate-in fade-in duration-150">
       
       {/* Header & New Sale Button */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h2 className="text-lg font-bold text-slate-900">Sales Transactions</h2>
           <p className="text-xs text-slate-500">Record Palay grain & Copra deliveries</p>
@@ -80,7 +80,7 @@ export const SalesTab: React.FC<SalesTabProps> = ({
       </div>
 
       {/* Search & Filter Bar */}
-      <div className="space-y-2">
+      <div className="space-y-2 shrink-0">
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
           <input
@@ -127,12 +127,12 @@ export const SalesTab: React.FC<SalesTabProps> = ({
 
       {/* Sales List */}
       {filteredSales.length === 0 ? (
-        <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+        <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 shrink-0">
           <p className="text-sm font-semibold text-slate-600">No sales transactions found</p>
           <p className="text-xs text-slate-400 mt-1">Try adjusting your filters or record a new sale.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex-1 overflow-y-auto min-h-0 space-y-3 pb-16 pr-1">
           {filteredSales.map((sale) => {
             const summary = StorageService.getSalePaymentSummary(sale, payments);
             const isFullyPaid = summary.status === 'PAID';

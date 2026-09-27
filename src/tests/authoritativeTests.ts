@@ -1897,6 +1897,165 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(updatedSupplier.id === supplier.id, 'Supplier ID must be preserved');
     });
 
+    await executeTest('Integrity', 'Archive Workflow: Valid completed/cancelled to archived, invalid planned/active to archived, archived read-only, archived cannot receive harvests', () => {
+      StorageService.resetToCleanState();
+      
+      // 1. Create a planned cycle
+      const plannedCycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Planned Cycle',
+        startDate: '2026-05-01',
+        farmField: 'Field A',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'PLANNED'
+      });
+      
+      // Attempt to archive planned cycle directly -> REJECT
+      let threw = false;
+      try {
+        StorageService.archiveCycle(plannedCycle.id);
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Only COMPLETED or CANCELLED cycles can be archived'), 'Reject archiving planned cycle');
+      }
+      assert(threw, 'Must throw when archiving planned cycle');
+
+      // 2. Create an active cycle
+      const activeCycle = StorageService.createCycle({
+        crop: 'Copra',
+        cycleName: 'Active Cycle',
+        startDate: '2026-05-01',
+        farmField: 'Field B',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      
+      // Attempt to archive active cycle directly -> REJECT
+      threw = false;
+      try {
+        StorageService.archiveCycle(activeCycle.id);
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Only COMPLETED or CANCELLED cycles can be archived'), 'Reject archiving active cycle');
+      }
+      assert(threw, 'Must throw when archiving active cycle');
+
+      // 3. Create a cycle and complete it
+      const cycleToComplete = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'To Complete',
+        startDate: '2026-05-01',
+        farmField: 'Field C',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      const completed = StorageService.updateCycle(cycleToComplete.id, {
+        status: 'COMPLETED',
+        completionDate: '2026-08-30'
+      });
+      
+      // Archive the completed cycle -> SUCCESS
+      const archived1 = StorageService.archiveCycle(completed.id);
+      assert(archived1.status === 'ARCHIVED', 'Status must be ARCHIVED');
+
+      // 4. Create a cycle and cancel it
+      const cycleToCancel = StorageService.createCycle({
+        crop: 'Copra',
+        cycleName: 'To Cancel',
+        startDate: '2026-05-01',
+        farmField: 'Field D',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      const cancelled = StorageService.updateCycle(cycleToCancel.id, {
+        status: 'CANCELLED'
+      });
+      
+      // Archive the cancelled cycle -> SUCCESS
+      const archived2 = StorageService.archiveCycle(cancelled.id);
+      assert(archived2.status === 'ARCHIVED', 'Status must be ARCHIVED');
+
+      // 5. Archived cycle is read-only -> REJECT edits
+      threw = false;
+      try {
+        StorageService.updateCycle(archived1.id, {
+          cycleName: 'New Name'
+        });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Closed cycles are read-only'), 'Reject editing archived cycle');
+      }
+      assert(threw, 'Must throw when editing archived cycle');
+
+      // 6. Archived cycle cannot receive harvests -> REJECT harvests
+      threw = false;
+      try {
+        StorageService.createHarvest({
+          cycleId: archived1.id,
+          crop: 'Rice',
+          date: '2026-06-01',
+          quantity: 100,
+          unit: 'kg'
+        });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Cannot log harvest for cycle'), 'Reject logging harvest on archived cycle');
+      }
+      assert(threw, 'Must throw when logging harvest on archived cycle');
+    });
+
+    await executeTest('Integrity', 'Edit Harvest cycle selection rules: matches crop and excludes closed cycles', () => {
+      StorageService.resetToCleanState();
+      
+      const riceActive = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Rice Active',
+        startDate: '2026-06-01',
+        farmField: 'Field 1',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      const riceClosed = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Rice Completed',
+        startDate: '2026-06-01',
+        farmField: 'Field 2',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'COMPLETED',
+        completionDate: '2026-08-30'
+      });
+      const copraActive = StorageService.createCycle({
+        crop: 'Copra',
+        cycleName: 'Copra Active',
+        startDate: '2026-06-01',
+        farmField: 'Field 3',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+
+      const harvestCrop = 'Rice';
+      const allCycles = StorageService.getCycles();
+      
+      const editEligibleCycles = allCycles.filter((c) => {
+        return c.crop.toLowerCase() === harvestCrop.toLowerCase() && !['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(c.status);
+      });
+
+      const hasRiceActive = editEligibleCycles.some(c => c.id === riceActive.id);
+      const hasRiceClosed = editEligibleCycles.some(c => c.id === riceClosed.id);
+      const hasCopraActive = editEligibleCycles.some(c => c.id === copraActive.id);
+
+      assert(hasRiceActive, 'Should include active Rice cycle');
+      assert(!hasRiceClosed, 'Should exclude closed Rice cycle');
+      assert(!hasCopraActive, 'Should exclude Copra cycle for Rice harvest');
+    });
+
 
 
   } finally {

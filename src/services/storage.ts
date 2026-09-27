@@ -1147,6 +1147,48 @@ export const StorageService = {
     return updated;
   },
 
+  archiveCycle(id: string): ProductionCycle {
+    const db = this.loadDatabase();
+    const existingIndex = db.cycles.findIndex((c) => c.id === id);
+    if (existingIndex === -1) throw new Error('Production cycle not found');
+
+    const current = db.cycles[existingIndex];
+    if (current.status !== 'COMPLETED' && current.status !== 'CANCELLED') {
+      throw new Error(`Only COMPLETED or CANCELLED cycles can be archived. Current status is ${current.status}.`);
+    }
+
+    const bridge = getNativeBridge();
+    if (bridge) {
+      const payload = { id, status: 'ARCHIVED' };
+      const resStr = bridge.updateCycle(JSON.stringify(payload));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const reloadedDb = this.loadDatabase();
+        const updated = reloadedDb.cycles.find((c) => c.id === id);
+        if (updated) return updated;
+      }
+      throw new Error(res.error || 'Failed to archive cycle on native database');
+    }
+
+    const now = new Date().toISOString();
+    const updated: ProductionCycle = {
+      ...current,
+      status: 'ARCHIVED',
+      updatedAt: now
+    };
+    db.cycles[existingIndex] = updated;
+
+    this.addAuditLog(
+      db,
+      'CYCLE',
+      id,
+      'UPDATE',
+      `Archived production cycle "${updated.cycleName}"`
+    );
+    this.saveMemoryDatabase(db);
+    return updated;
+  },
+
   getHarvests(): Harvest[] {
     return this.loadDatabase().harvests;
   },

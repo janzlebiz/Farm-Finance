@@ -167,11 +167,13 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
                 required
                 className="w-full px-3 py-2 border rounded-xl bg-white text-xs"
               >
-                {cycles.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.cycleName} ({c.crop} • {c.farmField})
-                  </option>
-                ))}
+                {cycles
+                  .filter((c) => c.crop.toLowerCase() === harvest.crop.toLowerCase() && !['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(c.status))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.cycleName} ({c.crop} • {c.farmField})
+                    </option>
+                  ))}
               </select>
             </div>
 

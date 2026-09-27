@@ -76,10 +76,10 @@ export const ReceivablesTab: React.FC<ReceivablesTabProps> = ({
   });
 
   return (
-    <div className="space-y-4 pb-16 animate-in fade-in duration-150">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden space-y-4 animate-in fade-in duration-150">
       
       {/* Top Banner: Total Outstanding */}
-      <div className="bg-linear-to-r from-amber-900 to-amber-800 text-white p-5 rounded-2xl shadow-md">
+      <div className="bg-linear-to-r from-amber-900 to-amber-800 text-white p-5 rounded-2xl shadow-md shrink-0">
         <div className="text-xs uppercase tracking-wider text-amber-200 font-semibold flex items-center justify-between">
           <span>Outstanding Receivables</span>
           <span className="bg-amber-700/80 px-2 py-0.5 rounded text-[11px]">
@@ -95,7 +95,7 @@ export const ReceivablesTab: React.FC<ReceivablesTabProps> = ({
       </div>
 
       {/* Aging Analysis Cards */}
-      <div>
+      <div className="shrink-0">
         <div className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5 text-slate-500" />
           Aging Breakdown
@@ -144,7 +144,7 @@ export const ReceivablesTab: React.FC<ReceivablesTabProps> = ({
       </div>
 
       {/* Filter Bars */}
-      <div className="flex flex-wrap gap-2 text-xs">
+      <div className="flex flex-wrap gap-2 text-xs shrink-0">
         <select
           value={buyerFilter}
           onChange={(e) => setBuyerFilter(e.target.value)}
@@ -178,13 +178,13 @@ export const ReceivablesTab: React.FC<ReceivablesTabProps> = ({
 
       {/* Receivables List */}
       {filteredReceivables.length === 0 ? (
-        <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+        <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 shrink-0">
           <CheckCircle className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
           <p className="text-sm font-semibold text-slate-700">No outstanding receivables matching criteria</p>
           <p className="text-xs text-slate-400 mt-1">All sales in this selection are fully paid.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex-1 overflow-y-auto min-h-0 space-y-3 pb-16 pr-1">
           {filteredReceivables.map(({ sale, remainingBalanceCentavos, totalPaidCentavos, ageInDays, agingBucket }) => (
             <div
               key={sale.id}

@@ -83,7 +83,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
   const netCashFlow = totalCashIn - totalCashOut;
 
   return (
-    <div className="space-y-4 pb-16 animate-in fade-in duration-150">
+    <div className="flex-1 overflow-y-auto space-y-4 pb-16 animate-in fade-in duration-150">
       
       {/* Header */}
       <div>
