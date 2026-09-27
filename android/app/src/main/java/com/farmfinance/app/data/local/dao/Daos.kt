@@ -198,6 +198,9 @@ interface ProductionDao {
     @Query("SELECT * FROM harvests WHERE id = :id")
     suspend fun getHarvestById(id: String): HarvestEntity?
 
+    @Query("SELECT * FROM harvests WHERE cycleId = :cycleId")
+    suspend fun getHarvestsByCycleIdSync(cycleId: String): List<HarvestEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertHarvest(harvest: HarvestEntity)
 

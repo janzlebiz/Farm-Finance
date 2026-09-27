@@ -141,6 +141,7 @@ data class ProductionCycleEntity(
     val crop: String,
     val cycleName: String,
     val startDate: String,
+    val completionDate: String?,
     val expectedHarvestDate: String?,
     val actualHarvestDate: String?,
     val farmField: String,

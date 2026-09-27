@@ -133,6 +133,7 @@ data class ProductionCycle(
     val crop: String,
     val cycleName: String,
     val startDate: String,
+    val completionDate: String? = null,
     val expectedHarvestDate: String? = null,
     val actualHarvestDate: String? = null,
     val farmField: String,

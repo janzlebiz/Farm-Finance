@@ -31,6 +31,7 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
   const [editDate, setEditDate] = useState<string>(harvest.date);
   const [editNotes, setEditNotes] = useState<string>(harvest.notes || '');
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const handleStartEdit = () => {
     setEditCycleId(currentHarvest.cycleId);
@@ -41,11 +42,14 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
     setEditDate(currentHarvest.date);
     setEditNotes(currentHarvest.notes || '');
     setError(null);
+    setIsSubmitting(false);
     setIsEditing(true);
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     const qty = parseFloat(editQuantity);
     if (isNaN(qty) || qty <= 0) {
       setError('Please enter a valid positive quantity.');
@@ -60,10 +64,25 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
       return;
     }
 
+    const targetCycle = cycles.find((c) => c.id === editCycleId);
+    if (targetCycle) {
+      if (editDate < targetCycle.startDate) {
+        setError(`Harvest date (${editDate}) cannot be earlier than cycle start date (${targetCycle.startDate}).`);
+        return;
+      }
+      if (targetCycle.status === 'COMPLETED' && targetCycle.completionDate) {
+        if (editDate > targetCycle.completionDate) {
+          setError(`Harvest date (${editDate}) cannot be after cycle completion date (${targetCycle.completionDate}).`);
+          return;
+        }
+      }
+    }
+
+    setIsSubmitting(true);
     try {
       const updated = StorageService.updateHarvest(currentHarvest.id, {
         cycleId: editCycleId,
-        crop: editCrop as any,
+        crop: (targetCycle ? targetCycle.crop : editCrop) as any,
         date: editDate,
         quantity: qty,
         unit: editUnit,
@@ -77,6 +96,8 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
       onUpdated(updated);
     } catch (err: any) {
       setError(err?.message || 'Failed to update harvest.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -219,9 +240,10 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-amber-900 hover:bg-amber-950 text-white rounded-xl font-bold text-xs shadow-2xs transition"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-amber-900 hover:bg-amber-950 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs shadow-2xs transition"
               >
-                Save Changes
+                {isSubmitting ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </form>

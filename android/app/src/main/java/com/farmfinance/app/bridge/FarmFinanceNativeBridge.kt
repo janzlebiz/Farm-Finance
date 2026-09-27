@@ -181,6 +181,7 @@ class FarmFinanceNativeBridge(
                             put("crop", c.crop)
                             put("cycleName", c.cycleName)
                             put("startDate", c.startDate)
+                            put("completionDate", c.completionDate ?: JSONObject.NULL)
                             put("expectedHarvestDate", c.expectedHarvestDate ?: JSONObject.NULL)
                             put("actualHarvestDate", c.actualHarvestDate ?: JSONObject.NULL)
                             put("farmField", c.farmField)
@@ -563,8 +564,10 @@ class FarmFinanceNativeBridge(
             val areaUnit = json.getString("areaUnit")
             val expectedHarvestDate = if (json.has("expectedHarvestDate") && !json.isNull("expectedHarvestDate")) json.getString("expectedHarvestDate") else null
             val notes = json.optString("notes", "")
+            val status = json.optString("status", "ACTIVE")
+            val completionDate = if (json.has("completionDate") && !json.isNull("completionDate")) json.getString("completionDate") else null
 
-            val result = repository.recordCycle(crop, cycleName, startDate, farmField, area, areaUnit, expectedHarvestDate, notes)
+            val result = repository.recordCycle(crop, cycleName, startDate, farmField, area, areaUnit, expectedHarvestDate, notes, status, completionDate)
             if (result.isSuccess) {
                 val c = result.getOrThrow()
                 JSONObject().apply {
@@ -697,8 +700,9 @@ class FarmFinanceNativeBridge(
             val expectedHarvestDate = if (json.has("expectedHarvestDate") && !json.isNull("expectedHarvestDate")) json.getString("expectedHarvestDate") else null
             val actualHarvestDate = if (json.has("actualHarvestDate") && !json.isNull("actualHarvestDate")) json.getString("actualHarvestDate") else null
             val notes = json.optString("notes", "")
+            val completionDate = if (json.has("completionDate") && !json.isNull("completionDate")) json.getString("completionDate") else null
 
-            val result = repository.updateCycle(id, crop, cycleName, startDate, farmField, area, areaUnit, status, expectedHarvestDate, actualHarvestDate, notes)
+            val result = repository.updateCycle(id, crop, cycleName, startDate, farmField, area, areaUnit, status, expectedHarvestDate, actualHarvestDate, notes, completionDate)
             if (result.isSuccess) {
                 JSONObject().apply {
                     put("success", true)
@@ -905,6 +909,7 @@ class FarmFinanceNativeBridge(
                         crop = c.getString("crop"),
                         cycleName = c.getString("cycleName"),
                         startDate = c.getString("startDate"),
+                        completionDate = if (c.has("completionDate") && !c.isNull("completionDate")) c.getString("completionDate") else null,
                         expectedHarvestDate = if (c.has("expectedHarvestDate") && !c.isNull("expectedHarvestDate")) c.getString("expectedHarvestDate") else null,
                         actualHarvestDate = if (c.has("actualHarvestDate") && !c.isNull("actualHarvestDate")) c.getString("actualHarvestDate") else null,
                         farmField = c.getString("farmField"),

@@ -570,55 +570,9 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         area: Double,
         areaUnit: String,
         expectedHarvestDate: String? = null,
-        notes: String = ""
-    ): Result<ProductionCycle> {
-        val now = System.currentTimeMillis()
-        val id = "cycle_${UUID.randomUUID()}"
-        val entity = ProductionCycleEntity(
-            id = id,
-            crop = crop,
-            cycleName = cycleName.trim(),
-            startDate = startDate,
-            expectedHarvestDate = expectedHarvestDate,
-            actualHarvestDate = null,
-            farmField = farmField.trim(),
-            area = area,
-            areaUnit = areaUnit,
-            status = CycleStatus.ACTIVE.name,
-            notes = notes.trim(),
-            createdAt = now,
-            updatedAt = now
-        )
-        db.withTransaction {
-            db.productionDao().insertCycle(entity)
-            db.auditLogDao().insertAuditLog(
-                AuditLogEntity(
-                    id = "audit_${UUID.randomUUID()}",
-                    timestamp = now,
-                    entityType = "CYCLE",
-                    entityId = id,
-                    eventType = "CREATE",
-                    summary = "Created cycle $cycleName ($crop)",
-                    metadataJson = "{\"cycleId\": \"$id\"}",
-                    appVersion = "1.0.0"
-                )
-            )
-        }
-        return Result.success(entity.toDomain())
-    }
-
-    suspend fun updateCycle(
-        id: String,
-        crop: String,
-        cycleName: String,
-        startDate: String,
-        farmField: String,
-        area: Double,
-        areaUnit: String,
+        notes: String = "",
         status: String = "ACTIVE",
-        expectedHarvestDate: String? = null,
-        actualHarvestDate: String? = null,
-        notes: String = ""
+        completionDate: String? = null
     ): Result<ProductionCycle> {
         val cleanCrop = crop.trim()
         if (cleanCrop.isBlank()) return Result.failure(IllegalArgumentException("Crop cannot be empty"))
@@ -641,13 +595,120 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         val isValidStatus = CycleStatus.values().any { it.name == cleanStatus }
         if (!isValidStatus) return Result.failure(IllegalArgumentException("Invalid cycle status: $status. Must be one of: ${CycleStatus.values().joinToString { it.name }}"))
 
+        val cleanCompletionDate = completionDate?.trim()?.ifBlank { null }
+        if (cleanStatus == "COMPLETED") {
+            if (cleanCompletionDate.isNullOrBlank()) {
+                return Result.failure(IllegalArgumentException("Completion date is required when cycle status is COMPLETED"))
+            }
+            if (cleanCompletionDate < cleanStartDate) {
+                return Result.failure(IllegalArgumentException("Completion date ($cleanCompletionDate) must not be earlier than start date ($cleanStartDate)"))
+            }
+        }
+
+        val now = System.currentTimeMillis()
+        val id = "cycle_${UUID.randomUUID()}"
+        val entity = ProductionCycleEntity(
+            id = id,
+            crop = cleanCrop,
+            cycleName = cleanCycleName,
+            startDate = cleanStartDate,
+            completionDate = cleanCompletionDate,
+            expectedHarvestDate = expectedHarvestDate,
+            actualHarvestDate = null,
+            farmField = cleanFarmField,
+            area = area,
+            areaUnit = cleanAreaUnit,
+            status = cleanStatus,
+            notes = notes.trim(),
+            createdAt = now,
+            updatedAt = now
+        )
+        db.withTransaction {
+            db.productionDao().insertCycle(entity)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "CYCLE",
+                    entityId = id,
+                    eventType = "CREATE",
+                    summary = "Created cycle $cleanCycleName ($cleanCrop)",
+                    metadataJson = "{\"cycleId\": \"$id\"}",
+                    appVersion = "1.0.0"
+                )
+            )
+        }
+        return Result.success(entity.toDomain())
+    }
+
+    suspend fun updateCycle(
+        id: String,
+        crop: String,
+        cycleName: String,
+        startDate: String,
+        farmField: String,
+        area: Double,
+        areaUnit: String,
+        status: String = "ACTIVE",
+        expectedHarvestDate: String? = null,
+        actualHarvestDate: String? = null,
+        notes: String = "",
+        completionDate: String? = null
+    ): Result<ProductionCycle> {
+        val cleanCrop = crop.trim()
+        if (cleanCrop.isBlank()) return Result.failure(IllegalArgumentException("Crop cannot be empty"))
+
+        val cleanCycleName = cycleName.trim()
+        if (cleanCycleName.isBlank()) return Result.failure(IllegalArgumentException("Cycle name cannot be empty"))
+
+        val cleanStartDate = startDate.trim()
+        if (cleanStartDate.isBlank()) return Result.failure(IllegalArgumentException("Start date cannot be empty"))
+
+        val cleanFarmField = farmField.trim()
+        if (cleanFarmField.isBlank()) return Result.failure(IllegalArgumentException("Farm field cannot be empty"))
+
+        if (area <= 0.0) return Result.failure(IllegalArgumentException("Area must be greater than zero"))
+
+        val cleanAreaUnit = areaUnit.trim()
+        if (cleanAreaUnit.isBlank()) return Result.failure(IllegalArgumentException("Area unit cannot be empty"))
+
+        val cleanStatus = status.trim().uppercase()
+        val isValidStatus = CycleStatus.values().any { it.name == cleanStatus }
+        if (!isValidStatus) return Result.failure(IllegalArgumentException("Invalid cycle status: $status. Must be one of: ${CycleStatus.values().joinToString { it.name }}"))
+
+        val cleanCompletionDate = completionDate?.trim()?.ifBlank { null }
+        if (cleanStatus == "COMPLETED") {
+            if (cleanCompletionDate.isNullOrBlank()) {
+                return Result.failure(IllegalArgumentException("Completion date is required when cycle status is COMPLETED"))
+            }
+            if (cleanCompletionDate < cleanStartDate) {
+                return Result.failure(IllegalArgumentException("Completion date ($cleanCompletionDate) must not be earlier than start date ($cleanStartDate)"))
+            }
+        }
+
         val existing = db.productionDao().getCycleById(id)
             ?: return Result.failure(IllegalArgumentException("Production cycle not found"))
+
+        // Cycle Crop Change Protection: If cycle has harvests, crop cannot be changed
+        val existingHarvests = db.productionDao().getHarvestsByCycleIdSync(id)
+        if (existingHarvests.isNotEmpty() && !cleanCrop.equals(existing.crop, ignoreCase = true)) {
+            return Result.failure(IllegalArgumentException("Cannot change crop from ${existing.crop} to $cleanCrop because this cycle already has ${existingHarvests.size} recorded harvest batch(es)."))
+        }
+
+        // When marking cycle as COMPLETED, verify that no existing harvest has a date after completionDate
+        if (cleanStatus == "COMPLETED" && cleanCompletionDate != null) {
+            val conflictingHarvest = existingHarvests.find { it.date > cleanCompletionDate }
+            if (conflictingHarvest != null) {
+                return Result.failure(IllegalArgumentException("Cannot set completion date to $cleanCompletionDate: harvest on ${conflictingHarvest.date} occurred after this completion date."))
+            }
+        }
+
         val now = System.currentTimeMillis()
         val updated = existing.copy(
             crop = cleanCrop,
             cycleName = cleanCycleName,
             startDate = cleanStartDate,
+            completionDate = cleanCompletionDate,
             farmField = cleanFarmField,
             area = area,
             areaUnit = cleanAreaUnit,
@@ -690,15 +751,46 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         buyerId: String? = null,
         notes: String = ""
     ): Result<Harvest> {
+        if (quantity <= 0.0) return Result.failure(IllegalArgumentException("Harvest quantity must be greater than zero"))
+
+        val cleanDate = date.trim()
+        if (cleanDate.isBlank()) return Result.failure(IllegalArgumentException("Harvest date cannot be empty"))
+
+        val cleanUnit = unit.trim()
+        if (cleanUnit.isBlank()) return Result.failure(IllegalArgumentException("Harvest unit cannot be empty"))
+
+        val cleanCrop = crop.trim()
+        if (cleanCrop.isBlank()) return Result.failure(IllegalArgumentException("Harvest crop cannot be empty"))
+
+        val referencedCycle = db.productionDao().getCycleById(cycleId)
+            ?: return Result.failure(IllegalArgumentException("Referenced production cycle $cycleId does not exist"))
+
+        // Crop matching
+        if (!cleanCrop.equals(referencedCycle.crop, ignoreCase = true)) {
+            return Result.failure(IllegalArgumentException("Harvest crop ($cleanCrop) does not match the referenced production cycle crop (${referencedCycle.crop})"))
+        }
+
+        // Date validation: harvest date must not be earlier than cycle start date
+        if (cleanDate < referencedCycle.startDate) {
+            return Result.failure(IllegalArgumentException("Harvest date ($cleanDate) cannot be earlier than cycle start date (${referencedCycle.startDate})"))
+        }
+
+        // Date validation: if cycle is COMPLETED, harvest date must not be after completion date
+        if (referencedCycle.status == "COMPLETED" && referencedCycle.completionDate != null) {
+            if (cleanDate > referencedCycle.completionDate) {
+                return Result.failure(IllegalArgumentException("Harvest date ($cleanDate) cannot be after cycle completion date (${referencedCycle.completionDate})"))
+            }
+        }
+
         val now = System.currentTimeMillis()
         val id = "harv_${UUID.randomUUID()}"
         val entity = HarvestEntity(
             id = id,
             cycleId = cycleId,
-            crop = crop,
-            date = date,
+            crop = referencedCycle.crop,
+            date = cleanDate,
             quantity = quantity,
-            unit = unit,
+            unit = cleanUnit,
             gradeQuality = gradeQuality,
             sellingPriceCentavos = sellingPrice?.centavos,
             buyerId = buyerId,
@@ -714,7 +806,7 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
                     entityType = "HARVEST",
                     entityId = id,
                     eventType = "CREATE",
-                    summary = "Recorded harvest of $quantity $unit $crop",
+                    summary = "Recorded harvest of $quantity $cleanUnit ${referencedCycle.crop}",
                     metadataJson = "{\"harvestId\": \"$id\", \"cycleId\": \"$cycleId\"}",
                     appVersion = "1.0.0"
                 )
@@ -749,8 +841,21 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         val referencedCycle = db.productionDao().getCycleById(cycleId)
             ?: return Result.failure(IllegalArgumentException("Referenced production cycle $cycleId does not exist"))
 
+        // Crop matching
         if (!cleanCrop.equals(referencedCycle.crop, ignoreCase = true)) {
             return Result.failure(IllegalArgumentException("Harvest crop ($cleanCrop) does not match the referenced production cycle crop (${referencedCycle.crop})"))
+        }
+
+        // Date validation: harvest date must not be earlier than cycle start date
+        if (cleanDate < referencedCycle.startDate) {
+            return Result.failure(IllegalArgumentException("Harvest date ($cleanDate) cannot be earlier than cycle start date (${referencedCycle.startDate})"))
+        }
+
+        // Date validation: if cycle is COMPLETED, harvest date must not be after completion date
+        if (referencedCycle.status == "COMPLETED" && referencedCycle.completionDate != null) {
+            if (cleanDate > referencedCycle.completionDate) {
+                return Result.failure(IllegalArgumentException("Harvest date ($cleanDate) cannot be after cycle completion date (${referencedCycle.completionDate})"))
+            }
         }
 
         val existing = db.productionDao().getHarvestById(id)
@@ -811,6 +916,7 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         crop = crop,
         cycleName = cycleName,
         startDate = startDate,
+        completionDate = completionDate,
         expectedHarvestDate = expectedHarvestDate,
         actualHarvestDate = actualHarvestDate,
         farmField = farmField,

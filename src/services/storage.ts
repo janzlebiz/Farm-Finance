@@ -806,7 +806,7 @@ export const StorageService = {
     const db = this.loadDatabase();
     const newBuyer: Buyer = {
       ...data,
-      id: `buyer-${Date.now()}`,
+      id: `buyer-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdDate: DateUtils.getTodayString()
     };
     db.buyers.unshift(newBuyer);
@@ -873,7 +873,7 @@ export const StorageService = {
     const db = this.loadDatabase();
     const newSupplier: Supplier = {
       ...data,
-      id: `supp-${Date.now()}`,
+      id: `supp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdDate: DateUtils.getTodayString()
     };
     db.suppliers.unshift(newSupplier);
@@ -942,9 +942,45 @@ export const StorageService = {
   },
 
   createCycle(data: Omit<ProductionCycle, 'id' | 'createdAt' | 'updatedAt'>): ProductionCycle {
+    const VALID_STATUSES = ['PLANNED', 'ACTIVE', 'HARVESTED', 'COMPLETED', 'CANCELLED', 'ARCHIVED'];
+
+    const cleanCrop = data.crop?.trim();
+    if (!cleanCrop) throw new Error('Crop cannot be empty');
+
+    const cleanCycleName = data.cycleName?.trim();
+    if (!cleanCycleName) throw new Error('Cycle name cannot be empty');
+
+    const cleanStartDate = data.startDate?.trim();
+    if (!cleanStartDate) throw new Error('Start date cannot be empty');
+
+    const cleanFarmField = data.farmField?.trim();
+    if (!cleanFarmField) throw new Error('Farm field cannot be empty');
+
+    if (typeof data.area !== 'number' || isNaN(data.area) || data.area <= 0) {
+      throw new Error('Area must be greater than zero');
+    }
+
+    const cleanAreaUnit = data.areaUnit?.trim();
+    if (!cleanAreaUnit) throw new Error('Area unit cannot be empty');
+
+    const cleanStatus = (data.status || 'ACTIVE').trim().toUpperCase() as any;
+    if (!VALID_STATUSES.includes(cleanStatus)) {
+      throw new Error(`Invalid cycle status: ${data.status}. Must be one of: ${VALID_STATUSES.join(', ')}`);
+    }
+
+    const cleanCompletionDate = data.completionDate?.trim() || undefined;
+    if (cleanStatus === 'COMPLETED') {
+      if (!cleanCompletionDate) {
+        throw new Error('Completion date is required when cycle status is COMPLETED');
+      }
+      if (cleanCompletionDate < cleanStartDate) {
+        throw new Error(`Completion date (${cleanCompletionDate}) must not be earlier than start date (${cleanStartDate})`);
+      }
+    }
+
     const bridge = getNativeBridge();
     if (bridge) {
-      const resStr = bridge.createCycle(JSON.stringify(data));
+      const resStr = bridge.createCycle(JSON.stringify({ ...data, status: cleanStatus, completionDate: cleanCompletionDate }));
       const res = JSON.parse(resStr);
       if (res.success) {
         const db = this.loadDatabase();
@@ -958,7 +994,13 @@ export const StorageService = {
     const now = new Date().toISOString();
     const newCycle: ProductionCycle = {
       ...data,
-      id: `cycle-${Date.now()}`,
+      crop: cleanCrop as any,
+      cycleName: cleanCycleName,
+      startDate: cleanStartDate,
+      completionDate: cleanCompletionDate,
+      farmField: cleanFarmField,
+      status: cleanStatus,
+      id: `cycle-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdAt: now,
       updatedAt: now
     };
@@ -971,19 +1013,6 @@ export const StorageService = {
   updateCycle(id: string, data: Partial<Omit<ProductionCycle, 'id' | 'createdAt' | 'updatedAt'>>): ProductionCycle {
     // Authoritative validation
     const VALID_STATUSES = ['PLANNED', 'ACTIVE', 'HARVESTED', 'COMPLETED', 'CANCELLED', 'ARCHIVED'];
-
-    const bridge = getNativeBridge();
-    if (bridge) {
-      const payload = { id, ...data };
-      const resStr = bridge.updateCycle(JSON.stringify(payload));
-      const res = JSON.parse(resStr);
-      if (res.success) {
-        const db = this.loadDatabase();
-        const updated = db.cycles.find((c) => c.id === id);
-        if (updated) return updated;
-      }
-      throw new Error(res.error || 'Failed to update cycle on native database');
-    }
 
     const db = this.loadDatabase();
     const existingIndex = db.cycles.findIndex((c) => c.id === id);
@@ -1015,13 +1044,55 @@ export const StorageService = {
       throw new Error(`Invalid cycle status: ${data.status}. Must be one of: ${VALID_STATUSES.join(', ')}`);
     }
 
+    // Completion date validation
+    const completionDate = data.completionDate !== undefined
+      ? (data.completionDate?.trim() || undefined)
+      : current.completionDate;
+
+    if (status === 'COMPLETED') {
+      if (!completionDate) {
+        throw new Error('Completion date is required when cycle status is COMPLETED');
+      }
+      if (completionDate < startDate) {
+        throw new Error(`Completion date (${completionDate}) must not be earlier than start date (${startDate})`);
+      }
+    }
+
+    // Cycle Crop Change Protection: If cycle has harvests, crop cannot be changed
+    const cycleHarvests = db.harvests.filter((h) => h.cycleId === id);
+    if (cycleHarvests.length > 0 && crop.toLowerCase() !== current.crop.toLowerCase()) {
+      throw new Error(`Cannot change crop from ${current.crop} to ${crop} because this cycle already has ${cycleHarvests.length} recorded harvest batch(es).`);
+    }
+
+    // Check if existing harvests conflict with new completion date
+    if (status === 'COMPLETED' && completionDate) {
+      const conflictingHarvest = cycleHarvests.find((h) => h.date > completionDate);
+      if (conflictingHarvest) {
+        throw new Error(`Cannot set completion date to ${completionDate}: harvest on ${conflictingHarvest.date} occurred after this completion date.`);
+      }
+    }
+
+    const bridge = getNativeBridge();
+    if (bridge) {
+      const payload = { id, ...data, crop, cycleName, startDate, farmField, area, areaUnit, status, completionDate };
+      const resStr = bridge.updateCycle(JSON.stringify(payload));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const reloadedDb = this.loadDatabase();
+        const updated = reloadedDb.cycles.find((c) => c.id === id);
+        if (updated) return updated;
+      }
+      throw new Error(res.error || 'Failed to update cycle on native database');
+    }
+
     const now = new Date().toISOString();
     const updated: ProductionCycle = {
       ...current,
       ...data,
-      crop,
+      crop: crop as any,
       cycleName,
       startDate,
+      completionDate: status === 'COMPLETED' ? completionDate : (completionDate || undefined),
       farmField,
       area,
       areaUnit,
@@ -1048,22 +1119,59 @@ export const StorageService = {
   },
 
   createHarvest(data: Omit<Harvest, 'id' | 'createdAt'>): Harvest {
+    const db = this.loadDatabase();
+
+    const quantity = data.quantity;
+    if (typeof quantity !== 'number' || isNaN(quantity) || quantity <= 0) {
+      throw new Error('Harvest quantity must be greater than zero');
+    }
+
+    const cleanDate = data.date?.trim();
+    if (!cleanDate) throw new Error('Harvest date cannot be empty');
+
+    const cleanUnit = data.unit?.trim();
+    if (!cleanUnit) throw new Error('Harvest unit cannot be empty');
+
+    const referencedCycle = db.cycles.find((c) => c.id === data.cycleId);
+    if (!referencedCycle) {
+      throw new Error(`Referenced production cycle ${data.cycleId} does not exist`);
+    }
+
+    const requestedCrop = (data.crop || referencedCycle.crop)?.trim();
+    if (requestedCrop.toLowerCase() !== referencedCycle.crop.toLowerCase()) {
+      throw new Error(`Harvest crop (${requestedCrop}) does not match the referenced production cycle crop (${referencedCycle.crop})`);
+    }
+
+    // Harvest date must not be earlier than cycle start date
+    if (cleanDate < referencedCycle.startDate) {
+      throw new Error(`Harvest date (${cleanDate}) cannot be earlier than cycle start date (${referencedCycle.startDate})`);
+    }
+
+    // If cycle is COMPLETED, harvest date must not be after completion date
+    if (referencedCycle.status === 'COMPLETED' && referencedCycle.completionDate) {
+      if (cleanDate > referencedCycle.completionDate) {
+        throw new Error(`Harvest date (${cleanDate}) cannot be after cycle completion date (${referencedCycle.completionDate})`);
+      }
+    }
+
     const bridge = getNativeBridge();
     if (bridge) {
-      const resStr = bridge.createHarvest(JSON.stringify(data));
+      const resStr = bridge.createHarvest(JSON.stringify({ ...data, crop: data.crop || referencedCycle.crop, date: cleanDate, unit: cleanUnit }));
       const res = JSON.parse(resStr);
       if (res.success) {
-        const db = this.loadDatabase();
-        const created = db.harvests.find((h) => h.id === res.harvestId);
+        const reloadedDb = this.loadDatabase();
+        const created = reloadedDb.harvests.find((h) => h.id === res.harvestId);
         if (created) return created;
       }
       throw new Error(res.error || 'Failed to create harvest on native database');
     }
 
-    const db = this.loadDatabase();
     const newHarvest: Harvest = {
       ...data,
-      id: `harv-${Date.now()}`,
+      crop: referencedCycle.crop,
+      date: cleanDate,
+      unit: cleanUnit,
+      id: `harv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdAt: new Date().toISOString()
     };
     db.harvests.unshift(newHarvest);
@@ -1073,19 +1181,6 @@ export const StorageService = {
   },
 
   updateHarvest(id: string, data: Partial<Omit<Harvest, 'id' | 'createdAt'>>): Harvest {
-    const bridge = getNativeBridge();
-    if (bridge) {
-      const payload = { id, ...data };
-      const resStr = bridge.updateHarvest(JSON.stringify(payload));
-      const res = JSON.parse(resStr);
-      if (res.success) {
-        const db = this.loadDatabase();
-        const updated = db.harvests.find((h) => h.id === id);
-        if (updated) return updated;
-      }
-      throw new Error(res.error || 'Failed to update harvest on native database');
-    }
-
     const db = this.loadDatabase();
     const existingIndex = db.harvests.findIndex((h) => h.id === id);
     if (existingIndex === -1) throw new Error('Harvest not found');
@@ -1112,6 +1207,31 @@ export const StorageService = {
     const requestedCrop = (data.crop || referencedCycle.crop)?.trim();
     if (requestedCrop.toLowerCase() !== referencedCycle.crop.toLowerCase()) {
       throw new Error(`Harvest crop (${requestedCrop}) does not match the referenced production cycle crop (${referencedCycle.crop})`);
+    }
+
+    // Harvest date must not be earlier than cycle start date
+    if (date < referencedCycle.startDate) {
+      throw new Error(`Harvest date (${date}) cannot be earlier than cycle start date (${referencedCycle.startDate})`);
+    }
+
+    // If cycle is COMPLETED, harvest date must not be after completion date
+    if (referencedCycle.status === 'COMPLETED' && referencedCycle.completionDate) {
+      if (date > referencedCycle.completionDate) {
+        throw new Error(`Harvest date (${date}) cannot be after cycle completion date (${referencedCycle.completionDate})`);
+      }
+    }
+
+    const bridge = getNativeBridge();
+    if (bridge) {
+      const payload = { id, ...data, crop: data.crop || referencedCycle.crop, date, quantity, unit, cycleId: targetCycleId };
+      const resStr = bridge.updateHarvest(JSON.stringify(payload));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const reloadedDb = this.loadDatabase();
+        const updated = reloadedDb.harvests.find((h) => h.id === id);
+        if (updated) return updated;
+      }
+      throw new Error(res.error || 'Failed to update harvest on native database');
     }
 
     const updated: Harvest = {

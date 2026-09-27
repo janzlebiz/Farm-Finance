@@ -100,6 +100,7 @@ export interface ProductionCycle {
   crop: CropType;
   cycleName: string; // e.g. "Rice — Wet Season 2026"
   startDate: string;
+  completionDate?: string; // YYYY-MM-DD (Required if status is COMPLETED)
   expectedHarvestDate?: string;
   actualHarvestDate?: string;
   farmField: string;
