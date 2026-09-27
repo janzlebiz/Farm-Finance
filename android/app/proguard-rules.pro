@@ -1,9 +1,11 @@
 # Proguard rules for Farm Finance
 
-# Keep Room entities and DAOs
+# Keep Room entities, DAOs, and migrations
 -keep class com.farmfinance.app.data.local.entity.** { *; }
 -keep interface com.farmfinance.app.data.local.dao.** { *; }
 -keep class * extends androidx.room.RoomDatabase
+-keep class com.farmfinance.app.data.local.migration.** { *; }
+-keepclassmembers class com.farmfinance.app.data.local.migration.MigrationsKt { *; }
 
 # Keep Domain models and Money value class
 -keep class com.farmfinance.app.domain.model.** { *; }
