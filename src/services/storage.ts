@@ -1153,6 +1153,9 @@ export const StorageService = {
     if (existingIndex === -1) throw new Error('Production cycle not found');
 
     const current = db.cycles[existingIndex];
+    if (current.status === 'ARCHIVED') {
+      return current;
+    }
     if (current.status !== 'COMPLETED' && current.status !== 'CANCELLED') {
       throw new Error(`Only COMPLETED or CANCELLED cycles can be archived. Current status is ${current.status}.`);
     }
@@ -1166,7 +1169,7 @@ export const StorageService = {
 
     const bridge = getNativeBridge();
     if (bridge) {
-      const resStr = bridge.updateCycle(JSON.stringify(updated));
+      const resStr = bridge.archiveCycle(id);
       const res = JSON.parse(resStr);
       if (res.success) {
         const reloadedDb = this.loadDatabase();

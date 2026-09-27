@@ -766,6 +766,45 @@ class FarmRepository(private val db: FarmFinanceDatabase) {
         return Result.success(updated.toDomain())
     }
 
+    suspend fun archiveCycle(id: String): Result<ProductionCycle> {
+        val existing = db.productionDao().getCycleById(id)
+            ?: return Result.failure(IllegalArgumentException("Production cycle not found"))
+
+        val currentStatus = existing.status.uppercase()
+        if (currentStatus == "ARCHIVED") {
+            return Result.success(existing.toDomain())
+        }
+
+        if (currentStatus != "COMPLETED" && currentStatus != "CANCELLED") {
+            return Result.failure(
+                IllegalArgumentException("Only COMPLETED or CANCELLED cycles can be archived. Current status is ${existing.status}.")
+            )
+        }
+
+        val now = System.currentTimeMillis()
+        val updated = existing.copy(
+            status = "ARCHIVED",
+            updatedAt = now
+        )
+
+        db.withTransaction {
+            db.productionDao().updateCycle(updated)
+            db.auditLogDao().insertAuditLog(
+                AuditLogEntity(
+                    id = "audit_${UUID.randomUUID()}",
+                    timestamp = now,
+                    entityType = "CYCLE",
+                    entityId = id,
+                    eventType = "ARCHIVE",
+                    summary = "Archived production cycle \"${updated.cycleName}\" ($currentStatus -> ARCHIVED)",
+                    metadataJson = "{\"cycleId\": \"$id\"}",
+                    appVersion = "1.0.0"
+                )
+            )
+        }
+        return Result.success(updated.toDomain())
+    }
+
     val allHarvests: Flow<List<Harvest>> = db.productionDao().getAllHarvests().map { entities ->
         entities.map { it.toDomain() }
     }

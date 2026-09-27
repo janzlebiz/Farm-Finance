@@ -1897,7 +1897,7 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(updatedSupplier.id === supplier.id, 'Supplier ID must be preserved');
     });
 
-    await executeTest('Integrity', 'Archive Workflow: Valid completed/cancelled to archived, invalid planned/active to archived, archived read-only, archived cannot receive harvests', () => {
+    await executeTest('Integrity', 'Archive Workflow: Valid completed/cancelled to archived, invalid planned/active/harvested to archived, archived read-only, field preservation, re-archiving no-op', () => {
       StorageService.resetToCleanState();
       
       // 1. Create a planned cycle
@@ -1942,6 +1942,27 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       }
       assert(threw, 'Must throw when archiving active cycle');
 
+      // 2b. Create a harvested cycle
+      const harvestedCycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Harvested Cycle',
+        startDate: '2026-05-01',
+        farmField: 'Field E',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'HARVESTED'
+      });
+      
+      // Attempt to archive harvested cycle directly -> REJECT
+      threw = false;
+      try {
+        StorageService.archiveCycle(harvestedCycle.id);
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Only COMPLETED or CANCELLED cycles can be archived'), 'Reject archiving harvested cycle');
+      }
+      assert(threw, 'Must throw when archiving harvested cycle');
+
       // 3. Create a cycle and complete it
       const cycleToComplete = StorageService.createCycle({
         crop: 'Rice',
@@ -1950,8 +1971,58 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
         farmField: 'Field C',
         area: 1.0,
         areaUnit: 'ha',
+        status: 'ACTIVE',
+        expectedHarvestDate: '2026-07-01',
+        notes: 'Original Notes'
+      });
+
+      // Let's associate a harvest, an expense, and a sale to this cycle
+      const buyer = StorageService.createBuyer({
+        name: 'Test Buyer F',
+        contactNumber: '',
+        address: '',
+        notes: '',
         status: 'ACTIVE'
       });
+      const supplier = StorageService.createSupplier({
+        name: 'Test Supplier S',
+        contactNumber: '',
+        address: '',
+        notes: '',
+        status: 'ACTIVE'
+      });
+      
+      const harvest = StorageService.createHarvest({
+        cycleId: cycleToComplete.id,
+        crop: 'Rice',
+        date: '2026-06-01',
+        quantity: 150,
+        unit: 'kg'
+      });
+      
+      const saleRes = StorageService.createSale({
+        date: '2026-06-15',
+        crop: 'Rice',
+        quantity: 150,
+        unit: 'kg',
+        unitPriceCentavos: 3500,
+        buyerId: buyer.id,
+        cycleId: cycleToComplete.id
+      });
+      const sale = saleRes.sale!;
+      
+      const expenseRes = StorageService.createExpense({
+        date: '2026-05-10',
+        category: 'Fertilizer',
+        amountIncurredCentavos: 10000,
+        amountPaidCentavos: 10000,
+        description: 'Fertilizer purchase',
+        crop: 'Rice',
+        cycleId: cycleToComplete.id,
+        supplierId: supplier.id
+      });
+      const expense = expenseRes.expense!;
+
       const completed = StorageService.updateCycle(cycleToComplete.id, {
         status: 'COMPLETED',
         completionDate: '2026-08-30'
@@ -1960,6 +2031,32 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       // Archive the completed cycle -> SUCCESS
       const archived1 = StorageService.archiveCycle(completed.id);
       assert(archived1.status === 'ARCHIVED', 'Status must be ARCHIVED');
+
+      // Verify existing cycle fields are unchanged after archiving
+      assert(archived1.id === cycleToComplete.id, 'ID must be preserved');
+      assert(archived1.crop === 'Rice', 'Crop must be preserved');
+      assert(archived1.cycleName === 'To Complete', 'Cycle name must be preserved');
+      assert(archived1.startDate === '2026-05-01', 'Start date must be preserved');
+      assert(archived1.completionDate === '2026-08-30', 'Completion date must be preserved');
+      assert(archived1.farmField === 'Field C', 'Farm field must be preserved');
+      assert(archived1.area === 1.0, 'Area must be preserved');
+      assert(archived1.areaUnit === 'ha', 'Area unit must be preserved');
+      assert(archived1.expectedHarvestDate === '2026-07-01', 'Expected harvest date must be preserved');
+      assert(archived1.notes === 'Original Notes', 'Notes must be preserved');
+      assert(archived1.createdAt === completed.createdAt, 'createdAt must be preserved');
+
+      // Verify associated entities remain unchanged and linked
+      const reloadHarvest = StorageService.getHarvests().find(h => h.id === harvest.id);
+      assert(reloadHarvest && reloadHarvest.cycleId === archived1.id, 'Harvest must remain linked and unchanged');
+      assert(reloadHarvest && reloadHarvest.quantity === 150, 'Harvest fields must match');
+      
+      const reloadSale = StorageService.getSales().find(s => s.id === sale.id);
+      assert(reloadSale && reloadSale.cycleId === archived1.id, 'Sale must remain linked and unchanged');
+      assert(reloadSale && reloadSale.quantity === 150, 'Sale fields must match');
+      
+      const reloadExpense = StorageService.getExpenses().find(e => e.id === expense.id);
+      assert(reloadExpense && reloadExpense.cycleId === archived1.id, 'Expense must remain linked and unchanged');
+      assert(reloadExpense && reloadExpense.amountIncurredCentavos === 10000, 'Expense fields must match');
 
       // 4. Create a cycle and cancel it
       const cycleToCancel = StorageService.createCycle({
@@ -2006,6 +2103,11 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
         assert(e.message.includes('Cannot log harvest for cycle'), 'Reject logging harvest on archived cycle');
       }
       assert(threw, 'Must throw when logging harvest on archived cycle');
+
+      // 7. Re-archiving an already archived cycle is a safe no-op
+      const reArchived = StorageService.archiveCycle(archived1.id);
+      assert(reArchived.status === 'ARCHIVED', 'Should still be ARCHIVED');
+      assert(reArchived.updatedAt === archived1.updatedAt, 'updatedAt must not change on re-archive no-op');
     });
 
     await executeTest('Integrity', 'Edit Harvest cycle selection rules: matches crop and excludes closed cycles', () => {

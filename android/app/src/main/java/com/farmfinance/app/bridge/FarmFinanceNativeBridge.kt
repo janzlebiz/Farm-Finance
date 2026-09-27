@@ -723,6 +723,29 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
+    fun archiveCycle(id: String): String = runBlocking(Dispatchers.IO) {
+        try {
+            val result = repository.archiveCycle(id)
+            if (result.isSuccess) {
+                JSONObject().apply {
+                    put("success", true)
+                    put("cycleId", id)
+                }.toString()
+            } else {
+                JSONObject().apply {
+                    put("success", false)
+                    put("error", result.exceptionOrNull()?.message ?: "Failed to archive cycle")
+                }.toString()
+            }
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Invalid archive cycle call")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
     fun updateHarvest(jsonStr: String): String = runBlocking(Dispatchers.IO) {
         try {
             val json = JSONObject(jsonStr)
