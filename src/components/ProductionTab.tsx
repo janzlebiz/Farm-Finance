@@ -42,6 +42,9 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   const [isAddingHarvest, setIsAddingHarvest] = useState<boolean>(false);
   const [selectedHarvestForDetails, setSelectedHarvestForDetails] = useState<Harvest | null>(null);
 
+  // Archive Confirmation state
+  const [cycleToArchive, setCycleToArchive] = useState<ProductionCycle | null>(null);
+
   // Form submission lock (prevents duplicate submission)
   const [isSubmittingCycle, setIsSubmittingCycle] = useState<boolean>(false);
   const [isSubmittingHarvest, setIsSubmittingHarvest] = useState<boolean>(false);
@@ -574,15 +577,55 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
             setSelectedHarvestForDetails(h);
           }}
           onArchive={() => {
-            try {
-              StorageService.archiveCycle(selectedCycleForDetails.id);
-              setSelectedCycleForDetails(null);
-              onReload();
-            } catch (err: any) {
-              alert(err?.message || 'Failed to archive cycle.');
-            }
+            setCycleToArchive(selectedCycleForDetails);
           }}
         />
+      )}
+
+      {/* Confirmation Dialog: "Archive this production cycle?" */}
+      {cycleToArchive && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-full bg-amber-100 text-amber-800 shrink-0">
+                <AlertCircle className="w-6 h-6 text-amber-700" />
+              </div>
+              <h3 className="font-extrabold text-slate-900 text-base">
+                Archive this production cycle?
+              </h3>
+            </div>
+
+            <p className="text-xs leading-relaxed text-slate-600">
+              Archived cycles are read-only and will be moved to Closed & Archived Records.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setCycleToArchive(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    StorageService.archiveCycle(cycleToArchive.id);
+                    setCycleToArchive(null);
+                    setSelectedCycleForDetails(null);
+                    onReload();
+                  } catch (err: any) {
+                    alert(err?.message || 'Failed to archive cycle.');
+                  }
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-700 hover:bg-amber-800 transition"
+              >
+                Archive Cycle
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Harvest Details Modal with Edit Support */}

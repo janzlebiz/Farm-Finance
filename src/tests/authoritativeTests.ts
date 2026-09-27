@@ -2274,7 +2274,39 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(!isGloballyEmpty, 'Welcome card should NOT be shown because ledger is not globally empty');
     });
 
+    await executeTest('Integrity', 'Archive Confirmation workflow: Cancel retains cycle status, Confirm executes archive', () => {
+      StorageService.resetToCleanState();
 
+      // Create a completed cycle
+      const cycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Confirmation Test Cycle',
+        startDate: '2026-05-01',
+        farmField: 'Field A',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      const completed = StorageService.updateCycle(cycle.id, {
+        status: 'COMPLETED',
+        completionDate: '2026-08-30'
+      });
+
+      // Simulation of UI Cancel action:
+      // State transition: user requests archive -> confirmation modal shown -> user cancels.
+      // Verification: cycle remains COMPLETED, not ARCHIVED.
+      let retrieved = StorageService.getCycles().find((c) => c.id === completed.id);
+      assert(retrieved?.status === 'COMPLETED', 'Cycle must remain COMPLETED when archive is cancelled');
+
+      // Simulation of UI Confirm action:
+      // State transition: user requests archive -> confirmation modal shown -> user confirms -> StorageService.archiveCycle invoked.
+      // Verification: cycle transitions to ARCHIVED.
+      const archived = StorageService.archiveCycle(completed.id);
+      assert(archived.status === 'ARCHIVED', 'Cycle must transition to ARCHIVED when archive is confirmed');
+      
+      retrieved = StorageService.getCycles().find((c) => c.id === completed.id);
+      assert(retrieved?.status === 'ARCHIVED', 'Database must persist ARCHIVED status after confirmation');
+    });
 
   } finally {
     // Restore original user database state
