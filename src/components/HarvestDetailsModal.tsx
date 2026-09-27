@@ -112,14 +112,21 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
       <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         {/* Header */}
-        <div className="bg-amber-900 text-white p-5 flex items-center justify-between">
+        <div className={`${isClosed ? 'bg-slate-800' : 'bg-amber-900'} text-white p-5 flex items-center justify-between`}>
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">{currentHarvest.crop === 'Rice' ? '🌾' : '🥥'}</span>
             <div>
-              <h2 className="font-bold text-base">
-                {isEditing ? 'Edit Harvest Record' : 'Harvest Details'}
-              </h2>
-              <p className="text-xs text-amber-200">
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-base">
+                  {isEditing ? 'Edit Harvest Record' : 'Harvest Details'}
+                </h2>
+                {isClosed && activeCycle && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-700 text-slate-200 border border-slate-600">
+                    {activeCycle.status}
+                  </span>
+                )}
+              </div>
+              <p className={`text-xs ${isClosed ? 'text-slate-300' : 'text-amber-200'}`}>
                 {currentHarvest.crop} · {DateUtils.formatDisplayDate(currentHarvest.date)}
               </p>
             </div>
@@ -137,7 +144,7 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
             )}
             <button
               onClick={onClose}
-              className="p-1 rounded-full text-amber-200 hover:text-white transition"
+              className={`p-1 rounded-full ${isClosed ? 'text-slate-300' : 'text-amber-200'} hover:text-white transition`}
               aria-label="Close"
             >
               <X className="w-5 h-5" />
@@ -257,14 +264,18 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
         ) : (
           <div className="p-5 overflow-y-auto space-y-4 text-xs sm:text-sm">
             {/* Main Yield Card */}
-            <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 text-center">
-              <span className="text-xs text-amber-900/80 font-medium block mb-0.5">Quantity Harvested</span>
-              <div className="text-2xl font-black text-amber-950">
+            <div className={`${isClosed ? 'bg-slate-50 border-slate-200' : 'bg-amber-50/70 border-amber-200'} border rounded-xl p-4 text-center`}>
+              <span className={`text-xs ${isClosed ? 'text-slate-500' : 'text-amber-900/80'} font-medium block mb-0.5`}>Quantity Harvested</span>
+              <div className={`text-2xl font-black ${isClosed ? 'text-slate-900' : 'text-amber-950'}`}>
                 {currentHarvest.quantity.toLocaleString()} <span className="text-base font-semibold">{currentHarvest.unit}</span>
               </div>
               {currentHarvest.gradeQuality && (
-                <div className="mt-2 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-semibold text-xs border border-amber-300">
-                  <Award className="w-3.5 h-3.5" />
+                <div className={`mt-2 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full ${
+                  isClosed
+                    ? 'bg-slate-100 text-slate-700 border-slate-300'
+                    : 'bg-amber-100 text-amber-900 border-amber-300'
+                } font-semibold text-xs border`}>
+                  <Award className={`w-3.5 h-3.5 ${isClosed ? 'text-slate-600' : 'text-amber-700'}`} />
                   <span>{currentHarvest.gradeQuality}</span>
                 </div>
               )}
