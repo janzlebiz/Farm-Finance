@@ -8,6 +8,7 @@ import com.farmfinance.app.data.local.dao.*
 import com.farmfinance.app.data.local.entity.*
 import com.farmfinance.app.data.local.migration.MIGRATION_1_2
 import com.farmfinance.app.data.local.migration.MIGRATION_2_3
+import com.farmfinance.app.data.local.migration.MIGRATION_3_4
 
 @Database(
     entities = [
@@ -21,7 +22,7 @@ import com.farmfinance.app.data.local.migration.MIGRATION_2_3
         HarvestEntity::class,
         AuditLogEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class FarmFinanceDatabase : RoomDatabase() {
@@ -48,7 +49,7 @@ abstract class FarmFinanceDatabase : RoomDatabase() {
                     FarmFinanceDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                 INSTANCE = instance
                 instance

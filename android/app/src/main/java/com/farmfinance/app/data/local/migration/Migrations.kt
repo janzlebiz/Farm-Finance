@@ -70,3 +70,14 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         db.execSQL("CREATE INDEX IF NOT EXISTS index_expense_payments_date ON expense_payments(date)")
     }
 }
+
+/**
+ * Migration from Database Version 3 to Version 4:
+ * Adds nullable `completionDate` field (TEXT) to `production_cycles` table.
+ */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE production_cycles ADD COLUMN completionDate TEXT NULL")
+    }
+}
+
