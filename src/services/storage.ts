@@ -968,14 +968,38 @@ export const StorageService = {
       throw new Error(`Invalid cycle status: ${data.status}. Must be one of: ${VALID_STATUSES.join(', ')}`);
     }
 
-    const cleanCompletionDate = data.completionDate?.trim() || undefined;
+    let cleanCompletionDate: string | undefined = undefined;
     if (cleanStatus === 'COMPLETED') {
-      if (!cleanCompletionDate) {
+      const comp = data.completionDate?.trim();
+      if (!comp) {
         throw new Error('Completion date is required when cycle status is COMPLETED');
       }
-      if (cleanCompletionDate < cleanStartDate) {
-        throw new Error(`Completion date (${cleanCompletionDate}) must not be earlier than start date (${cleanStartDate})`);
+      if (comp < cleanStartDate) {
+        throw new Error(`Completion date (${comp}) must not be earlier than start date (${cleanStartDate})`);
       }
+      cleanCompletionDate = comp;
+    } else {
+      // If status is not COMPLETED, completionDate is cleared/null
+      cleanCompletionDate = undefined;
+    }
+
+    const db = this.loadDatabase();
+
+    // Reject exact duplicate production cycle: crop + cycleName + farmField + area + startDate + status
+    const isDuplicate = db.cycles.some((c) => {
+      return (
+        c.crop.trim().toLowerCase() === cleanCrop.toLowerCase() &&
+        c.cycleName.trim().toLowerCase() === cleanCycleName.toLowerCase() &&
+        c.farmField.trim().toLowerCase() === cleanFarmField.toLowerCase() &&
+        Math.abs(c.area - data.area) < 0.0001 &&
+        c.startDate.trim() === cleanStartDate &&
+        c.status.trim().toUpperCase() === cleanStatus
+      );
+    });
+    if (isDuplicate) {
+      throw new Error(
+        `A production cycle with identical details already exists ("${cleanCycleName}" — ${cleanCrop}, ${cleanFarmField}, ${data.area} ${cleanAreaUnit}, ${cleanStartDate}, ${cleanStatus})`
+      );
     }
 
     const bridge = getNativeBridge();
@@ -983,14 +1007,13 @@ export const StorageService = {
       const resStr = bridge.createCycle(JSON.stringify({ ...data, status: cleanStatus, completionDate: cleanCompletionDate }));
       const res = JSON.parse(resStr);
       if (res.success) {
-        const db = this.loadDatabase();
-        const created = db.cycles.find((c) => c.id === res.cycleId);
+        const reloadedDb = this.loadDatabase();
+        const created = reloadedDb.cycles.find((c) => c.id === res.cycleId);
         if (created) return created;
       }
       throw new Error(res.error || 'Failed to create cycle on native database');
     }
 
-    const db = this.loadDatabase();
     const now = new Date().toISOString();
     const newCycle: ProductionCycle = {
       ...data,
@@ -1013,12 +1036,19 @@ export const StorageService = {
   updateCycle(id: string, data: Partial<Omit<ProductionCycle, 'id' | 'createdAt' | 'updatedAt'>>): ProductionCycle {
     // Authoritative validation
     const VALID_STATUSES = ['PLANNED', 'ACTIVE', 'HARVESTED', 'COMPLETED', 'CANCELLED', 'ARCHIVED'];
+    const CLOSED_STATUSES = ['COMPLETED', 'CANCELLED', 'ARCHIVED'];
 
     const db = this.loadDatabase();
     const existingIndex = db.cycles.findIndex((c) => c.id === id);
     if (existingIndex === -1) throw new Error('Production cycle not found');
 
     const current = db.cycles[existingIndex];
+
+    // Closed records are read-only: COMPLETED, CANCELLED, and ARCHIVED production cycles cannot be edited
+    if (CLOSED_STATUSES.includes(current.status)) {
+      throw new Error(`Cannot edit production cycle "${current.cycleName}" because it is ${current.status}. Closed cycles are read-only.`);
+    }
+
     const crop = (data.crop !== undefined ? data.crop : current.crop)?.trim();
     if (!crop) throw new Error('Crop cannot be empty');
 
@@ -1044,18 +1074,21 @@ export const StorageService = {
       throw new Error(`Invalid cycle status: ${data.status}. Must be one of: ${VALID_STATUSES.join(', ')}`);
     }
 
-    // Completion date validation
-    const completionDate = data.completionDate !== undefined
-      ? (data.completionDate?.trim() || undefined)
-      : current.completionDate;
-
+    // Completion date handling:
+    // If status is COMPLETED, require completionDate and completionDate >= startDate
+    // If status changes from COMPLETED to ACTIVE, PLANNED, HARVESTED, CANCELLED, or ARCHIVED, completionDate must be cleared/null
+    let cleanCompletionDate: string | undefined = undefined;
     if (status === 'COMPLETED') {
-      if (!completionDate) {
+      const comp = data.completionDate !== undefined ? data.completionDate?.trim() : current.completionDate;
+      if (!comp) {
         throw new Error('Completion date is required when cycle status is COMPLETED');
       }
-      if (completionDate < startDate) {
-        throw new Error(`Completion date (${completionDate}) must not be earlier than start date (${startDate})`);
+      if (comp < startDate) {
+        throw new Error(`Completion date (${comp}) must not be earlier than start date (${startDate})`);
       }
+      cleanCompletionDate = comp;
+    } else {
+      cleanCompletionDate = undefined;
     }
 
     // Cycle Crop Change Protection: If cycle has harvests, crop cannot be changed
@@ -1065,16 +1098,16 @@ export const StorageService = {
     }
 
     // Check if existing harvests conflict with new completion date
-    if (status === 'COMPLETED' && completionDate) {
-      const conflictingHarvest = cycleHarvests.find((h) => h.date > completionDate);
+    if (status === 'COMPLETED' && cleanCompletionDate) {
+      const conflictingHarvest = cycleHarvests.find((h) => h.date > cleanCompletionDate!);
       if (conflictingHarvest) {
-        throw new Error(`Cannot set completion date to ${completionDate}: harvest on ${conflictingHarvest.date} occurred after this completion date.`);
+        throw new Error(`Cannot set completion date to ${cleanCompletionDate}: harvest on ${conflictingHarvest.date} occurred after this completion date.`);
       }
     }
 
     const bridge = getNativeBridge();
     if (bridge) {
-      const payload = { id, ...data, crop, cycleName, startDate, farmField, area, areaUnit, status, completionDate };
+      const payload = { id, ...data, crop, cycleName, startDate, farmField, area, areaUnit, status, completionDate: cleanCompletionDate };
       const resStr = bridge.updateCycle(JSON.stringify(payload));
       const res = JSON.parse(resStr);
       if (res.success) {
@@ -1092,7 +1125,7 @@ export const StorageService = {
       crop: crop as any,
       cycleName,
       startDate,
-      completionDate: status === 'COMPLETED' ? completionDate : (completionDate || undefined),
+      completionDate: cleanCompletionDate,
       farmField,
       area,
       areaUnit,
@@ -1137,6 +1170,12 @@ export const StorageService = {
       throw new Error(`Referenced production cycle ${data.cycleId} does not exist`);
     }
 
+    // Harvest Eligibility: COMPLETED, CANCELLED, and ARCHIVED cycles must not receive new harvests
+    const INELIGIBLE_STATUSES = ['COMPLETED', 'CANCELLED', 'ARCHIVED'];
+    if (INELIGIBLE_STATUSES.includes(referencedCycle.status)) {
+      throw new Error(`Cannot log harvest for cycle "${referencedCycle.cycleName}" because its status is ${referencedCycle.status}. Only active or in-progress cycles can receive new harvests.`);
+    }
+
     const requestedCrop = (data.crop || referencedCycle.crop)?.trim();
     if (requestedCrop.toLowerCase() !== referencedCycle.crop.toLowerCase()) {
       throw new Error(`Harvest crop (${requestedCrop}) does not match the referenced production cycle crop (${referencedCycle.crop})`);
@@ -1147,16 +1186,26 @@ export const StorageService = {
       throw new Error(`Harvest date (${cleanDate}) cannot be earlier than cycle start date (${referencedCycle.startDate})`);
     }
 
-    // If cycle is COMPLETED, harvest date must not be after completion date
-    if (referencedCycle.status === 'COMPLETED' && referencedCycle.completionDate) {
-      if (cleanDate > referencedCycle.completionDate) {
-        throw new Error(`Harvest date (${cleanDate}) cannot be after cycle completion date (${referencedCycle.completionDate})`);
-      }
+    // Duplicate Harvest check: cycleId + quantity + unit + harvestDate + gradeQuality
+    const cleanGrade = (data.gradeQuality || '').trim().toLowerCase();
+    const isDuplicate = db.harvests.some((h) => {
+      return (
+        h.cycleId === data.cycleId &&
+        Math.abs(h.quantity - quantity) < 0.0001 &&
+        h.unit.trim().toLowerCase() === cleanUnit.toLowerCase() &&
+        h.date.trim() === cleanDate &&
+        (h.gradeQuality || '').trim().toLowerCase() === cleanGrade
+      );
+    });
+    if (isDuplicate) {
+      throw new Error(
+        `A duplicate harvest record already exists for this cycle (${quantity} ${cleanUnit} on ${cleanDate}${data.gradeQuality ? ` — ${data.gradeQuality}` : ''}).`
+      );
     }
 
     const bridge = getNativeBridge();
     if (bridge) {
-      const resStr = bridge.createHarvest(JSON.stringify({ ...data, crop: data.crop || referencedCycle.crop, date: cleanDate, unit: cleanUnit }));
+      const resStr = bridge.createHarvest(JSON.stringify({ ...data, crop: referencedCycle.crop, date: cleanDate, unit: cleanUnit }));
       const res = JSON.parse(resStr);
       if (res.success) {
         const reloadedDb = this.loadDatabase();
@@ -1181,11 +1230,18 @@ export const StorageService = {
   },
 
   updateHarvest(id: string, data: Partial<Omit<Harvest, 'id' | 'createdAt'>>): Harvest {
+    const CLOSED_STATUSES = ['COMPLETED', 'CANCELLED', 'ARCHIVED'];
     const db = this.loadDatabase();
     const existingIndex = db.harvests.findIndex((h) => h.id === id);
     if (existingIndex === -1) throw new Error('Harvest not found');
 
     const current = db.harvests[existingIndex];
+
+    // Closed records are read-only: Harvests belonging to closed cycles cannot be edited
+    const currentCycle = db.cycles.find((c) => c.id === current.cycleId);
+    if (currentCycle && CLOSED_STATUSES.includes(currentCycle.status)) {
+      throw new Error(`Cannot edit harvest because its associated production cycle "${currentCycle.cycleName}" is ${currentCycle.status}. Closed cycles and their harvests are read-only.`);
+    }
 
     const quantity = data.quantity !== undefined ? data.quantity : current.quantity;
     if (typeof quantity !== 'number' || isNaN(quantity) || quantity <= 0) {
@@ -1202,6 +1258,10 @@ export const StorageService = {
     const referencedCycle = db.cycles.find((c) => c.id === targetCycleId);
     if (!referencedCycle) {
       throw new Error(`Referenced production cycle ${targetCycleId} does not exist`);
+    }
+
+    if (targetCycleId !== current.cycleId && CLOSED_STATUSES.includes(referencedCycle.status)) {
+      throw new Error(`Cannot move harvest to cycle "${referencedCycle.cycleName}" because it is ${referencedCycle.status}.`);
     }
 
     const requestedCrop = (data.crop || referencedCycle.crop)?.trim();
@@ -1223,7 +1283,7 @@ export const StorageService = {
 
     const bridge = getNativeBridge();
     if (bridge) {
-      const payload = { id, ...data, crop: data.crop || referencedCycle.crop, date, quantity, unit, cycleId: targetCycleId };
+      const payload = { id, ...data, crop: referencedCycle.crop, date, quantity, unit, cycleId: targetCycleId };
       const resStr = bridge.updateHarvest(JSON.stringify(payload));
       const res = JSON.parse(resStr);
       if (res.success) {

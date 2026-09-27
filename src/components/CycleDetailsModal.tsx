@@ -33,6 +33,8 @@ export const CycleDetailsModal: React.FC<CycleDetailsModalProps> = ({
   const cycleRevenueCentavos = cycleSales.reduce((acc, s) => acc + s.grossAmountCentavos, 0);
   const netIncomeCentavos = cycleRevenueCentavos - totalCycleCostCentavos;
 
+  const isClosed = ['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(cycle.status);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
@@ -54,14 +56,16 @@ export const CycleDetailsModal: React.FC<CycleDetailsModalProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <button
-              onClick={onEdit}
-              className="px-2.5 py-1 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1 transition shadow-xs"
-              title="Edit cycle"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-              <span>Edit</span>
-            </button>
+            {!isClosed && (
+              <button
+                onClick={onEdit}
+                className="px-2.5 py-1 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1 transition shadow-xs"
+                title="Edit cycle"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Edit</span>
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1 rounded-full text-emerald-200 hover:text-white transition"
@@ -193,13 +197,19 @@ export const CycleDetailsModal: React.FC<CycleDetailsModalProps> = ({
 
           {/* Action Buttons */}
           <div className="pt-2 flex items-center gap-2">
-            <button
-              onClick={onEdit}
-              className="flex-1 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5 transition"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-              <span>Edit Cycle Details</span>
-            </button>
+            {!isClosed ? (
+              <button
+                onClick={onEdit}
+                className="flex-1 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5 transition"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Edit Cycle Details</span>
+              </button>
+            ) : (
+              <div className="flex-1 py-2.5 bg-slate-50 text-slate-500 font-semibold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-1.5">
+                <span>Closed Record (Read-Only)</span>
+              </div>
+            )}
             <button
               onClick={onClose}
               className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition"

@@ -67,6 +67,8 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   const [harvestDate, setHarvestDate] = useState<string>(DateUtils.getTodayString());
   const [harvestError, setHarvestError] = useState<string | null>(null);
 
+  const eligibleCycles = cycles.filter((c) => !['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(c.status));
+
   const resetCycleForm = () => {
     setIsAddingCycle(false);
     setEditingCycle(null);
@@ -89,6 +91,10 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   };
 
   const handleStartEditCycle = (c: ProductionCycle) => {
+    if (['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(c.status)) {
+      setCycleError(`Cannot edit production cycle "${c.cycleName}" because it is ${c.status}. Closed records are read-only.`);
+      return;
+    }
     setEditingCycle(c);
     setCrop(c.crop);
     setCycleName(c.cycleName);
@@ -105,11 +111,14 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   };
 
   const handleOpenAddHarvest = () => {
-    // If cycles exist, ensure harvestCycleId is valid
-    if (cycles.length > 0) {
-      const defaultCycle = cycles.find((c) => c.id === harvestCycleId) || cycles[0];
+    // If eligible cycles exist, select first eligible cycle
+    const eligible = cycles.filter((c) => !['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(c.status));
+    if (eligible.length > 0) {
+      const defaultCycle = eligible.find((c) => c.id === harvestCycleId) || eligible[0];
       setHarvestCycleId(defaultCycle.id);
       setHarvestCrop(defaultCycle.crop);
+    } else {
+      setHarvestCycleId('');
     }
     setHarvestError(null);
     setIsSubmittingHarvest(false);
@@ -122,6 +131,12 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
 
     if (!cycleName.trim()) {
       setCycleError('Cycle Name is required.');
+      return;
+    }
+
+    const parsedArea = parseFloat(area);
+    if (isNaN(parsedArea) || parsedArea <= 0) {
+      setCycleError('Area must be greater than zero.');
       return;
     }
 
@@ -143,9 +158,9 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
           crop: crop as any,
           cycleName: cycleName.trim(),
           startDate,
-          completionDate: status === 'COMPLETED' ? completionDate.trim() : (completionDate.trim() || undefined),
+          completionDate: status === 'COMPLETED' ? completionDate.trim() : undefined,
           farmField: farmField.trim() || 'Main Field',
-          area: parseFloat(area) || 1.0,
+          area: parsedArea,
           areaUnit,
           status,
           notes: notes.trim() || undefined
@@ -160,9 +175,9 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
           crop: crop as any,
           cycleName: cycleName.trim(),
           startDate,
-          completionDate: status === 'COMPLETED' ? completionDate.trim() : (completionDate.trim() || undefined),
+          completionDate: status === 'COMPLETED' ? completionDate.trim() : undefined,
           farmField: farmField.trim() || 'Main Field',
-          area: parseFloat(area) || 1.0,
+          area: parsedArea,
           areaUnit,
           status,
           notes: notes.trim() || undefined
@@ -181,7 +196,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   const handleCreateHarvest = (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingHarvest) return;
-    if (cycles.length === 0 || !harvestCycleId) return;
+    if (eligibleCycles.length === 0 || !harvestCycleId) return;
 
     const qty = parseFloat(harvestQuantity) || 0;
     if (qty <= 0) {
@@ -195,16 +210,14 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
       return;
     }
 
-    if (harvestDate < targetCycle.startDate) {
-      setHarvestError(`Harvest date (${harvestDate}) cannot be earlier than cycle start date (${targetCycle.startDate}).`);
+    if (['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(targetCycle.status)) {
+      setHarvestError(`Cannot log harvest for cycle "${targetCycle.cycleName}" because its status is ${targetCycle.status}.`);
       return;
     }
 
-    if (targetCycle.status === 'COMPLETED' && targetCycle.completionDate) {
-      if (harvestDate > targetCycle.completionDate) {
-        setHarvestError(`Harvest date (${harvestDate}) cannot be after cycle completion date (${targetCycle.completionDate}).`);
-        return;
-      }
+    if (harvestDate < targetCycle.startDate) {
+      setHarvestError(`Harvest date (${harvestDate}) cannot be earlier than cycle start date (${targetCycle.startDate}).`);
+      return;
     }
 
     setIsSubmittingHarvest(true);
@@ -574,7 +587,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
                   <label className="font-semibold text-slate-700 block mb-1">Area (Hectares) *</label>
                   <input
                     type="number"
-                    step="0.1"
+                    step="0.01"
                     min="0.01"
                     required
                     value={area}
@@ -679,15 +692,17 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
               </div>
             )}
 
-            {cycles.length === 0 ? (
+            {eligibleCycles.length === 0 ? (
               <div className="py-6 text-center space-y-4 text-xs">
                 <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-800 mx-auto flex items-center justify-center">
                   <AlertCircle className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm text-slate-900">No Production Cycles Found</h4>
+                  <h4 className="font-bold text-sm text-slate-900">No Eligible Production Cycles Found</h4>
                   <p className="text-slate-500 mt-1 max-w-xs mx-auto">
-                    You must create a production cycle first before logging a harvest. Harvests must be linked to a specific planting season or field cycle.
+                    {cycles.length === 0
+                      ? 'You must create a production cycle first before logging a harvest.'
+                      : 'All existing production cycles are completed, cancelled, or archived. Create a new active cycle to log new harvests.'}
                   </p>
                 </div>
                 <div className="pt-2 flex justify-center gap-2">
@@ -724,7 +739,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
                     required
                     className="w-full px-3 py-2 border rounded-xl bg-white"
                   >
-                    {cycles.map((c) => (
+                    {eligibleCycles.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.cycleName} ({c.crop} • {c.farmField})
                       </option>

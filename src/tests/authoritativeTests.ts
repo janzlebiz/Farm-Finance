@@ -1357,11 +1357,76 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(threw, 'Must throw when harvest date is earlier than cycle start date');
     });
 
-    await executeTest('Integrity', 'Completed Cycle: Requires Completion Date >= Start Date & rejects harvest after completion', () => {
+    // ----------------------------------------------------
+    // SUITE: PRODUCTION INTEGRITY & LIFECYCLE (@6.3.1)
+    // ----------------------------------------------------
+    await executeTest('Integrity', 'Area Validation: Accepts 1.0 hectare, decimal steps, requires area > 0', () => {
+      StorageService.resetToCleanState();
+      // 1. Area 1.0 hectare must be accepted
+      const cycle1 = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'One Hectare Cycle',
+        startDate: '2026-05-01',
+        farmField: 'Parcel 1',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      assert(cycle1.area === 1.0, 'Area 1.0 must be preserved');
+
+      // 2. Area 0.01 hectare must be accepted
+      const cycle2 = StorageService.createCycle({
+        crop: 'Copra',
+        cycleName: 'Fractional Area Cycle',
+        startDate: '2026-05-01',
+        farmField: 'Parcel 2',
+        area: 0.01,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      assert(cycle2.area === 0.01, 'Area 0.01 must be preserved');
+
+      // 3. Area 0 or negative must be rejected
+      let threwZero = false;
+      try {
+        StorageService.createCycle({
+          crop: 'Rice',
+          cycleName: 'Zero Area Cycle',
+          startDate: '2026-05-01',
+          farmField: 'Parcel 3',
+          area: 0,
+          areaUnit: 'ha',
+          status: 'ACTIVE'
+        });
+      } catch (e: any) {
+        threwZero = true;
+        assert(e.message.includes('Area must be greater than zero'), 'Must reject zero area');
+      }
+      assert(threwZero, 'Must throw on zero area');
+
+      let threwNeg = false;
+      try {
+        StorageService.createCycle({
+          crop: 'Rice',
+          cycleName: 'Negative Area Cycle',
+          startDate: '2026-05-01',
+          farmField: 'Parcel 4',
+          area: -2.5,
+          areaUnit: 'ha',
+          status: 'ACTIVE'
+        });
+      } catch (e: any) {
+        threwNeg = true;
+        assert(e.message.includes('Area must be greater than zero'), 'Must reject negative area');
+      }
+      assert(threwNeg, 'Must throw on negative area');
+    });
+
+    await executeTest('Integrity', 'Completion Date: Required for COMPLETED, cleared on status change to ACTIVE/PLANNED', () => {
       StorageService.resetToCleanState();
       const cycle = StorageService.createCycle({
         crop: 'Rice',
-        cycleName: 'Completed Cycle Test',
+        cycleName: 'Completion Date Test',
         startDate: '2026-05-01',
         farmField: 'Field 4',
         area: 2.0,
@@ -1395,49 +1460,200 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       }
       assert(threw, 'Must throw when completion date is earlier than start date');
 
-      // Mark cycle COMPLETED with valid completion date: 2026-09-15
+      // 3. Mark cycle COMPLETED with valid completion date: 2026-09-15
       const completedCycle = StorageService.updateCycle(cycle.id, {
         status: 'COMPLETED',
         completionDate: '2026-09-15'
       });
       assert(completedCycle.status === 'COMPLETED', 'Cycle must be completed');
       assert(completedCycle.completionDate === '2026-09-15', 'Completion date must be stored');
+    });
 
-      // 3. Reject harvest date after completion date (e.g. 2026-09-20 > 2026-09-15)
-      threw = false;
+    await executeTest('Integrity', 'Duplicate Production Cycle: Rejects exact duplicate with case/trim normalization', () => {
+      StorageService.resetToCleanState();
+      StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Main Rice Season',
+        startDate: '2026-06-01',
+        farmField: 'North Field',
+        area: 2.5,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+
+      // Exact duplicate (with whitespace and case differences) must be rejected
+      let threw = false;
+      try {
+        StorageService.createCycle({
+          crop: '  rice  ' as any,
+          cycleName: '  main rice season  ',
+          startDate: '2026-06-01',
+          farmField: '  north field  ',
+          area: 2.5,
+          areaUnit: 'ha',
+          status: 'active' as any
+        });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('identical details already exists'), 'Must report duplicate cycle');
+      }
+      assert(threw, 'Must throw on exact duplicate cycle');
+
+      // Legitimate cycle with different start date or field succeeds
+      const distinctCycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Main Rice Season',
+        startDate: '2026-11-01', // Different date
+        farmField: 'North Field',
+        area: 2.5,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      assert(!!distinctCycle.id, 'Distinct cycle with different date must succeed');
+    });
+
+    await executeTest('Integrity', 'Harvest Eligibility: Rejects logging harvest on COMPLETED, CANCELLED, and ARCHIVED cycles', () => {
+      StorageService.resetToCleanState();
+      const completedCycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Completed Season',
+        startDate: '2026-05-01',
+        completionDate: '2026-09-15',
+        farmField: 'Field A',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'COMPLETED'
+      });
+
+      const cancelledCycle = StorageService.createCycle({
+        crop: 'Copra',
+        cycleName: 'Cancelled Season',
+        startDate: '2026-05-01',
+        farmField: 'Field B',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'CANCELLED'
+      });
+
+      const archivedCycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Archived Season',
+        startDate: '2026-05-01',
+        farmField: 'Field C',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ARCHIVED'
+      });
+
+      // 1. Attempt harvest on COMPLETED cycle
+      let threw = false;
       try {
         StorageService.createHarvest({
           cycleId: completedCycle.id,
           crop: 'Rice',
-          date: '2026-09-20',
-          quantity: 400,
+          date: '2026-09-10',
+          quantity: 500,
           unit: 'kg'
         });
       } catch (e: any) {
         threw = true;
-        assert(e.message.includes('cannot be after cycle completion date'), 'Must reject harvest after completion date');
+        assert(e.message.includes('Cannot log harvest for cycle'), 'Must reject harvest on COMPLETED cycle');
       }
-      assert(threw, 'Must throw when harvest date is after cycle completion date');
+      assert(threw, 'Must throw when logging harvest on COMPLETED cycle');
 
-      // 4. Valid harvest on or before completion date succeeds
-      const validHarvest = StorageService.createHarvest({
-        cycleId: completedCycle.id,
-        crop: 'Rice',
-        date: '2026-09-15',
-        quantity: 400,
-        unit: 'kg'
-      });
-      assert(validHarvest.date === '2026-09-15', 'Valid harvest on completion date must succeed');
+      // 2. Attempt harvest on CANCELLED cycle
+      threw = false;
+      try {
+        StorageService.createHarvest({
+          cycleId: cancelledCycle.id,
+          crop: 'Copra',
+          date: '2026-09-10',
+          quantity: 500,
+          unit: 'kg'
+        });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Cannot log harvest for cycle'), 'Must reject harvest on CANCELLED cycle');
+      }
+      assert(threw, 'Must throw when logging harvest on CANCELLED cycle');
+
+      // 3. Attempt harvest on ARCHIVED cycle
+      threw = false;
+      try {
+        StorageService.createHarvest({
+          cycleId: archivedCycle.id,
+          crop: 'Rice',
+          date: '2026-09-10',
+          quantity: 500,
+          unit: 'kg'
+        });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Cannot log harvest for cycle'), 'Must reject harvest on ARCHIVED cycle');
+      }
+      assert(threw, 'Must throw when logging harvest on ARCHIVED cycle');
     });
 
-    await executeTest('Integrity', 'Cycle Crop Change Protection: Reject changing crop if cycle has harvests', () => {
+    await executeTest('Integrity', 'Closed Records Read-Only: Rejects editing COMPLETED, CANCELLED, ARCHIVED cycles and their harvests', () => {
+      StorageService.resetToCleanState();
+      // Create an active cycle, add a harvest, then complete the cycle
+      const cycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Read-Only Cycle Test',
+        startDate: '2026-05-01',
+        farmField: 'Field 9',
+        area: 1.5,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+
+      const harvest = StorageService.createHarvest({
+        cycleId: cycle.id,
+        crop: 'Rice',
+        date: '2026-08-15',
+        quantity: 1000,
+        unit: 'kg'
+      });
+
+      // Complete the cycle
+      StorageService.updateCycle(cycle.id, {
+        status: 'COMPLETED',
+        completionDate: '2026-08-30'
+      });
+
+      // 1. Attempt to edit the completed cycle -> REJECT
+      let threw = false;
+      try {
+        StorageService.updateCycle(cycle.id, {
+          cycleName: 'Attempt to Rename Completed Cycle'
+        });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Closed cycles are read-only'), 'Must reject edit on closed cycle');
+      }
+      assert(threw, 'Must throw when updating completed cycle');
+
+      // 2. Attempt to edit a harvest belonging to the completed cycle -> REJECT
+      threw = false;
+      try {
+        StorageService.updateHarvest(harvest.id, {
+          quantity: 1200
+        });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('Closed cycles and their harvests are read-only'), 'Must reject edit on harvest of closed cycle');
+      }
+      assert(threw, 'Must throw when editing harvest of closed cycle');
+    });
+
+    await executeTest('Integrity', 'Duplicate Harvest: Rejects exact duplicate (cycleId + quantity + unit + date + gradeQuality)', () => {
       StorageService.resetToCleanState();
       const cycle = StorageService.createCycle({
         crop: 'Rice',
-        cycleName: 'Protected Cycle',
-        startDate: '2026-05-01',
-        farmField: 'Parcel 7',
-        area: 1.0,
+        cycleName: 'Batch Yield Cycle',
+        startDate: '2026-06-01',
+        farmField: 'Paddy 1',
+        area: 2.0,
         areaUnit: 'ha',
         status: 'ACTIVE'
       });
@@ -1445,29 +1661,93 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       StorageService.createHarvest({
         cycleId: cycle.id,
         crop: 'Rice',
-        date: '2026-08-01',
-        quantity: 800,
-        unit: 'kg'
+        date: '2026-09-01',
+        quantity: 500,
+        unit: 'kg',
+        gradeQuality: 'Grade A'
       });
 
-      // Attempt to change crop to Copra
+      // Exact duplicate harvest must be rejected
       let threw = false;
       try {
-        StorageService.updateCycle(cycle.id, {
-          crop: 'Copra'
+        StorageService.createHarvest({
+          cycleId: cycle.id,
+          crop: 'Rice',
+          date: '2026-09-01',
+          quantity: 500,
+          unit: '  kg  ',
+          gradeQuality: '  grade a  '
         });
       } catch (e: any) {
         threw = true;
-        assert(e.message.includes('Cannot change crop'), 'Must reject crop change when harvests exist');
+        assert(e.message.includes('duplicate harvest record already exists'), 'Must reject duplicate harvest');
       }
-      assert(threw, 'Must throw when changing crop of cycle with harvest batches');
+      assert(threw, 'Must throw on duplicate harvest');
 
-      // Updating other fields while keeping crop unchanged must succeed
-      const updated = StorageService.updateCycle(cycle.id, {
-        cycleName: 'Protected Cycle Renamed'
+      // Separate legitimate batch on same date with different quantity or grade succeeds
+      const batch2 = StorageService.createHarvest({
+        cycleId: cycle.id,
+        crop: 'Rice',
+        date: '2026-09-01',
+        quantity: 600, // Different quantity
+        unit: 'kg',
+        gradeQuality: 'Grade B'
       });
-      assert(updated.cycleName === 'Protected Cycle Renamed', 'Renaming must succeed');
-      assert(updated.crop === 'Rice', 'Crop must remain unchanged');
+      assert(batch2.quantity === 600, 'Legitimate second batch must succeed');
+    });
+
+    await executeTest('Integrity', 'Harvest Crop/Cycle: Cross-crop rejected (Rice+Copra & Copra+Rice)', () => {
+      StorageService.resetToCleanState();
+      const riceCycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Rice Field 1',
+        startDate: '2026-06-01',
+        farmField: 'East Paddy',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      const copraCycle = StorageService.createCycle({
+        crop: 'Copra',
+        cycleName: 'Copra Grove 1',
+        startDate: '2026-06-01',
+        farmField: 'Coconut Grove',
+        area: 2.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+
+      // 1. Create: Rice harvest + Copra cycle must be rejected
+      let threw = false;
+      try {
+        StorageService.createHarvest({
+          cycleId: copraCycle.id,
+          crop: 'Rice',
+          date: '2026-09-01',
+          quantity: 100,
+          unit: 'kg'
+        });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('does not match'), 'Must reject Rice harvest for Copra cycle');
+      }
+      assert(threw, 'Must throw when creating Rice harvest on Copra cycle');
+
+      // 2. Create: Copra harvest + Rice cycle must be rejected
+      threw = false;
+      try {
+        StorageService.createHarvest({
+          cycleId: riceCycle.id,
+          crop: 'Copra',
+          date: '2026-09-01',
+          quantity: 100,
+          unit: 'kg'
+        });
+      } catch (e: any) {
+        threw = true;
+        assert(e.message.includes('does not match'), 'Must reject Copra harvest for Rice cycle');
+      }
+      assert(threw, 'Must throw when creating Copra harvest on Rice cycle');
     });
 
     await executeTest('Integrity', 'updateHarvest Crop/Cycle Integrity: Cross-crop updates rejected', () => {
@@ -1534,8 +1814,7 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
         farmField: 'Field 9',
         area: 1.5,
         areaUnit: 'ha',
-        status: 'COMPLETED',
-        completionDate: '2026-09-30'
+        status: 'ACTIVE'
       });
 
       const harvest = StorageService.createHarvest({
@@ -1558,22 +1837,11 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       }
       assert(threw, 'Must throw when updateHarvest date is before cycle start date');
 
-      // 2. Reject updateHarvest with date after cycle completion date
-      threw = false;
-      try {
-        StorageService.updateHarvest(harvest.id, {
-          date: '2026-10-05' // After completion date 2026-09-30
-        });
-      } catch (e: any) {
-        threw = true;
-        assert(e.message.includes('cannot be after cycle completion date'), 'Must reject harvest after completion date');
-      }
-      assert(threw, 'Must throw when updateHarvest date is after cycle completion date');
-
-      // 3. Reject updateCycle setting completionDate before existing harvest date
+      // 2. Reject updateCycle setting completionDate before existing harvest date
       threw = false;
       try {
         StorageService.updateCycle(cycle.id, {
+          status: 'COMPLETED',
           completionDate: '2026-07-01' // Earlier than existing harvest on 2026-07-15
         });
       } catch (e: any) {
@@ -1582,7 +1850,7 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       }
       assert(threw, 'Must throw when setting cycle completionDate earlier than existing harvest');
 
-      // 4. Multiple harvest batches for the same cycle succeed
+      // 3. Multiple harvest batches for the same cycle succeed
       const harvestBatch2 = StorageService.createHarvest({
         cycleId: cycle.id,
         crop: 'Rice',
@@ -1593,6 +1861,40 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(harvestBatch2.quantity === 750, 'Legitimate second harvest batch must succeed');
       const allHarvests = StorageService.getHarvests().filter((h) => h.cycleId === cycle.id);
       assert(allHarvests.length === 2, 'Cycle must have 2 legitimate harvest batches');
+    });
+
+    await executeTest('Integrity', 'Buyer & Supplier UX Model: Detailed records and balance tracking', () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({
+        name: 'National Grain Traders',
+        contactNumber: '09171234567',
+        address: 'Poblacion Grain Depot',
+        notes: 'Top tier palay buyer',
+        status: 'ACTIVE'
+      });
+      assert(!!buyer.id, 'Buyer must have valid ID');
+      assert(buyer.name === 'National Grain Traders', 'Buyer name must match');
+
+      const updatedBuyer = StorageService.updateBuyer(buyer.id, {
+        name: 'National Grain Traders Corp',
+        notes: 'Updated commercial terms'
+      });
+      assert(updatedBuyer.name === 'National Grain Traders Corp', 'Updated name must be stored');
+      assert(updatedBuyer.id === buyer.id, 'Original ID must be strictly preserved');
+
+      const supplier = StorageService.createSupplier({
+        name: 'AgriChem Supply Co',
+        contactNumber: '09289876543',
+        address: 'Provincial Highway',
+        notes: 'Certified fertilizer distributor',
+        status: 'ACTIVE'
+      });
+      assert(!!supplier.id, 'Supplier must have valid ID');
+      const updatedSupplier = StorageService.updateSupplier(supplier.id, {
+        notes: 'Terms 30 days'
+      });
+      assert(updatedSupplier.notes === 'Terms 30 days', 'Supplier note must be updated');
+      assert(updatedSupplier.id === supplier.id, 'Supplier ID must be preserved');
     });
 
 

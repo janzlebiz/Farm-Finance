@@ -4,7 +4,7 @@ export type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'VOIDED';
 
 export type PaymentMethod = 'CASH' | 'GCASH' | 'BANK_TRANSFER' | 'CHECK' | 'OTHER';
 
-export type CycleStatus = 'PLANNED' | 'ACTIVE' | 'HARVESTED' | 'COMPLETED' | 'CANCELLED';
+export type CycleStatus = 'PLANNED' | 'ACTIVE' | 'HARVESTED' | 'COMPLETED' | 'CANCELLED' | 'ARCHIVED';
 
 export interface Buyer {
   id: string;

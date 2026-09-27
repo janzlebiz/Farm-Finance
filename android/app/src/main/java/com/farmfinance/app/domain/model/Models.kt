@@ -20,7 +20,8 @@ enum class CycleStatus {
     ACTIVE,
     HARVESTED,
     COMPLETED,
-    CANCELLED
+    CANCELLED,
+    ARCHIVED
 }
 
 enum class AuditEntityType {

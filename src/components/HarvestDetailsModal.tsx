@@ -33,7 +33,14 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  const activeCycle = cycles.find((c) => c.id === currentHarvest.cycleId) || cycle;
+  const isClosed = activeCycle ? ['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(activeCycle.status) : false;
+
   const handleStartEdit = () => {
+    if (isClosed) {
+      setError('Cannot edit harvest belonging to a closed production cycle.');
+      return;
+    }
     setEditCycleId(currentHarvest.cycleId);
     setEditCrop(currentHarvest.crop);
     setEditQuantity(String(currentHarvest.quantity));
@@ -101,8 +108,6 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
     }
   };
 
-  const activeCycle = cycles.find((c) => c.id === currentHarvest.cycleId) || cycle;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
       <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
@@ -120,7 +125,7 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {!isEditing && (
+            {!isEditing && !isClosed && (
               <button
                 onClick={handleStartEdit}
                 className="px-2.5 py-1 rounded-lg bg-amber-800 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1 transition"
@@ -335,13 +340,19 @@ export const HarvestDetailsModal: React.FC<HarvestDetailsModalProps> = ({
             </div>
 
             <div className="pt-2 flex items-center gap-2">
-              <button
-                onClick={handleStartEdit}
-                className="flex-1 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-950 font-bold text-xs rounded-xl border border-amber-200 flex items-center justify-center gap-1.5 transition"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-                <span>Edit Harvest</span>
-              </button>
+              {!isClosed ? (
+                <button
+                  onClick={handleStartEdit}
+                  className="flex-1 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-950 font-bold text-xs rounded-xl border border-amber-200 flex items-center justify-center gap-1.5 transition"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit Harvest</span>
+                </button>
+              ) : (
+                <div className="flex-1 py-2.5 bg-slate-50 text-slate-500 font-semibold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-1.5">
+                  <span>Closed Record (Read-Only)</span>
+                </div>
+              )}
               <button
                 onClick={onClose}
                 className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition"
