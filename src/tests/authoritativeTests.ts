@@ -2056,6 +2056,122 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(!hasCopraActive, 'Should exclude Copra cycle for Rice harvest');
     });
 
+    await executeTest('Integrity', 'SaleModal cycle eligibility: includes PLANNED, ACTIVE, HARVESTED, COMPLETED and excludes CANCELLED, ARCHIVED', () => {
+      StorageService.resetToCleanState();
+
+      const planned = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Planned',
+        startDate: '2026-06-01',
+        farmField: 'F1',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'PLANNED'
+      });
+      const active = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Active',
+        startDate: '2026-06-01',
+        farmField: 'F2',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'ACTIVE'
+      });
+      const harvested = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Harvested',
+        startDate: '2026-06-01',
+        farmField: 'F3',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'HARVESTED'
+      });
+      const completed = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Completed',
+        startDate: '2026-06-01',
+        farmField: 'F4',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'COMPLETED',
+        completionDate: '2026-08-30'
+      });
+      const completedToArchive = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Completed To Archive',
+        startDate: '2026-06-01',
+        farmField: 'F6',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'COMPLETED',
+        completionDate: '2026-08-30'
+      });
+      const cancelled = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Cancelled',
+        startDate: '2026-06-01',
+        farmField: 'F5',
+        area: 1.0,
+        areaUnit: 'ha',
+        status: 'CANCELLED'
+      });
+      const archived = StorageService.archiveCycle(completedToArchive.id);
+
+      const allCycles = StorageService.getCycles();
+      const crop = 'Rice';
+
+      const filtered = allCycles.filter((c) => {
+        const allowedStatuses = ['PLANNED', 'ACTIVE', 'HARVESTED', 'COMPLETED'];
+        return allowedStatuses.includes(c.status) && c.crop.toLowerCase() === crop.toLowerCase();
+      });
+
+      const allowedIds = filtered.map((c) => c.id);
+      assert(allowedIds.includes(planned.id), 'Should allow PLANNED');
+      assert(allowedIds.includes(active.id), 'Should allow ACTIVE');
+      assert(allowedIds.includes(harvested.id), 'Should allow HARVESTED');
+      assert(allowedIds.includes(completed.id), 'Should allow COMPLETED');
+      assert(!allowedIds.includes(cancelled.id), 'Should exclude CANCELLED');
+      assert(!allowedIds.includes(archived.id), 'Should exclude ARCHIVED');
+    });
+
+    await executeTest('Integrity', 'Dashboard empty state logic: globally empty vs selected period empty', () => {
+      StorageService.resetToCleanState();
+
+      // Setup global empty state
+      let globalSales = StorageService.getSales().filter((s) => !s.isVoided);
+      let globalExpenses = StorageService.getExpenses().filter((e) => !e.isVoided);
+      let isGloballyEmpty = globalSales.length === 0 && globalExpenses.length === 0;
+      assert(isGloballyEmpty, 'Should be globally empty initially');
+
+      // Create a sale to make ledger non-empty
+      const buyer = StorageService.createBuyer({
+        name: 'Test Buyer',
+        contactNumber: '',
+        address: '',
+        notes: '',
+        status: 'ACTIVE'
+      });
+      StorageService.createSale({
+        date: '2026-01-01',
+        crop: 'Rice',
+        quantity: 100,
+        unit: 'kg',
+        unitPriceCentavos: 3000,
+        buyerId: buyer.id
+      });
+
+      // Verify not globally empty
+      globalSales = StorageService.getSales().filter((s) => !s.isVoided);
+      globalExpenses = StorageService.getExpenses().filter((e) => !e.isVoided);
+      isGloballyEmpty = globalSales.length === 0 && globalExpenses.length === 0;
+      assert(!isGloballyEmpty, 'Should not be globally empty after recording sale');
+
+      // Check current month (e.g. 2026-09-27) has 0 sales in selected period metrics, but should not show onboarding welcome because ledger is not globally empty
+      const metricsForCurrentMonth = StorageService.calculateMetrics('month'); // For current date of 2026-09
+      assert(metricsForCurrentMonth.salesCount === 0, 'No sales should be found in this month');
+      assert(!isGloballyEmpty, 'Welcome card should NOT be shown because ledger is not globally empty');
+    });
+
 
 
   } finally {

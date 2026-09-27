@@ -1157,25 +1157,25 @@ export const StorageService = {
       throw new Error(`Only COMPLETED or CANCELLED cycles can be archived. Current status is ${current.status}.`);
     }
 
-    const bridge = getNativeBridge();
-    if (bridge) {
-      const payload = { id, status: 'ARCHIVED' };
-      const resStr = bridge.updateCycle(JSON.stringify(payload));
-      const res = JSON.parse(resStr);
-      if (res.success) {
-        const reloadedDb = this.loadDatabase();
-        const updated = reloadedDb.cycles.find((c) => c.id === id);
-        if (updated) return updated;
-      }
-      throw new Error(res.error || 'Failed to archive cycle on native database');
-    }
-
     const now = new Date().toISOString();
     const updated: ProductionCycle = {
       ...current,
       status: 'ARCHIVED',
       updatedAt: now
     };
+
+    const bridge = getNativeBridge();
+    if (bridge) {
+      const resStr = bridge.updateCycle(JSON.stringify(updated));
+      const res = JSON.parse(resStr);
+      if (res.success) {
+        const reloadedDb = this.loadDatabase();
+        const updatedFromDb = reloadedDb.cycles.find((c) => c.id === id);
+        if (updatedFromDb) return updatedFromDb;
+      }
+      throw new Error(res.error || 'Failed to archive cycle on native database');
+    }
+
     db.cycles[existingIndex] = updated;
 
     this.addAuditLog(

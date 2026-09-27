@@ -304,11 +304,16 @@ export const SaleModal: React.FC<SaleModalProps> = ({
               className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-hidden focus:ring-2 focus:ring-emerald-600 bg-white"
             >
               <option value="">None / General Harvest</option>
-              {cycles.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.cycleName} ({c.crop})
-                </option>
-              ))}
+              {cycles
+                .filter((c) => {
+                  const allowedStatuses = ['PLANNED', 'ACTIVE', 'HARVESTED', 'COMPLETED'];
+                  return allowedStatuses.includes(c.status) && c.crop.toLowerCase() === crop.toLowerCase();
+                })
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.cycleName} ({c.crop})
+                  </option>
+                ))}
             </select>
           </div>
 

@@ -35,6 +35,10 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const metrics = StorageService.calculateMetrics(dateFilter, customStart, customEnd);
   const netCashFlowCentavos = metrics.cashReceivedCentavos - metrics.cashPaidCentavos;
 
+  const globalSales = StorageService.getSales().filter((s) => !s.isVoided);
+  const globalExpenses = StorageService.getExpenses().filter((e) => !e.isVoided);
+  const isGloballyEmpty = globalSales.length === 0 && globalExpenses.length === 0;
+
   return (
     <div className="flex-1 overflow-y-auto space-y-4 pb-12 animate-in fade-in duration-150">
       
@@ -120,7 +124,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       </div>
 
       {/* New User Welcome Card (Shown when account has 0 records) */}
-      {metrics.salesCount === 0 && metrics.expensesCount === 0 && (
+      {isGloballyEmpty ? (
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3">
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">🌱</span>
@@ -146,6 +150,13 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             </button>
           </div>
         </div>
+      ) : (
+        metrics.salesCount === 0 && metrics.expensesCount === 0 && (
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+            <p className="text-xs font-semibold text-slate-600">No transactions recorded during this period</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Use the quick actions below to record a sale or expense.</p>
+          </div>
+        )
       )}
 
       {/* Cash Flow vs Receivables Grid */}
