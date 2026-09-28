@@ -47,8 +47,11 @@ The current Android codebase runs **Room Database Version 4**, with existing mig
 - Alter existing Room tables to add a `record_sync_version` column (Integer version counter, defaulting to `1` for conflict tracking).
 - Alter existing Room tables to add a `last_synced_at` column (Integer millisecond timestamp, defaulting to `0`).
 
-### Cursor & Version Separation (Sync Cursor Model)
-Because current domain schemas lack a universal `updatedAt` field (Buyers, Suppliers, Payments, Expense Payments, and Harvests do not have `updatedAt` in their schema; Audit Logs use `timestamp`), we do **not** rely on existing domain fields for sync boundaries. 
+---
+
+## 3. Sync Cursor & Version Separation (Sync Cursor Model)
+
+Because current domain schemas lack a universal `updatedAt` field (Buyers, Suppliers, Payments, Expense Payments, and Harvests do not have `updatedAt` in their schema; Audit Logs use `timestamp`), we do **not** rely on existing domain fields for sync boundaries.
 
 Firestore query cursors and simple document timestamps are **NOT** themselves the application's durable global synchronization sequence. Instead, we define two distinct, decoupled synchronization concepts:
 
@@ -59,7 +62,13 @@ Firestore query cursors and simple document timestamps are **NOT** themselves th
 2. **`change_cursor` (Server-Managed Global Sync Sequence Checkpoint)**:
    - This is an explicit, **server-managed synchronization sequence** that provides deterministic global ordering of all mutations. It is not generated or incremented independently by the clients.
    - Change-log cursor allocation and protected synchronization metadata are server-managed (e.g., via server-side database triggers, transaction hooks, or Cloud Functions) and must not be freely client-writable.
-3. **Proposed Server-Side Sync Change-Log Design**:
+3. **Atomic Business Write + Change Log**:
+   - The authoritative cloud-write path is executed via a trusted server-side synchronization operation (e.g., secure API transactions or Cloud Functions) that atomically:
+     1. Writes the business document (e.g., inside `/users/{userId}/sales/`).
+     2. Allocates the next sequential `change_cursor`.
+     3. Writes the corresponding `_sync/change_log` entry.
+   - The business mutation and its change-log entry **MUST share one atomic transaction/batch boundary**. Asynchronous Firestore database triggers alone are insufficient, as transient triggering failures or out-of-order execution could violate atomicity and lead to unsynced records.
+4. **Proposed Server-Side Sync Change-Log Design**:
    - The server maintains a change-log collection:
      `/users/{uid}/_sync/change_log/{changeCursor}`
    - Each change-log entry conceptually contains:
@@ -69,24 +78,28 @@ Firestore query cursors and simple document timestamps are **NOT** themselves th
      - `operation`: The action performed (`"UPSERT"`, `"VOID"`, `"DELETE"`).
      - `record_sync_version`: The record-level sync version.
      - `timestamp`: Server-side atomic transaction timestamp.
-4. **`last_sync_cursor` (Local Sync Position)**:
+5. **`last_sync_cursor` (Local Sync Position)**:
    - This is a local persisted checkpoint stored by the Sync Engine, indicating the last successfully processed change-log position (`change_cursor`).
    - During an incremental sync cycle, the Sync Engine queries `/users/{uid}/_sync/change_log` for entries where `change_cursor` > `last_sync_cursor`.
-5. **Idempotent Uploads**:
+6. **Deterministic Initial Sync Snapshot Boundary**:
+   - When a user logs in on a new device, a simple "full fetch starting from cursor 0" is prone to missing concurrent writes that occur during initial synchronization. To prevent this, the client executes a deterministic bootstrap sequence:
+     1. Obtain a server-defined bootstrap/snapshot cursor **`S`** representing the absolute current state of the database.
+     2. Fetch the user's synchronized data snapshot matching that boundary **`S`**.
+     3. Apply the full snapshot transactionally to Room.
+     4. Persist the local checkpoint: `last_sync_cursor = S`.
+     5. Resume incremental synchronization using `change_cursor > S`.
+   - This ensures that any writes occurring during the initial sync download phase are captured safely in the subsequent incremental run, preserving full synchronization consistency.
+7. **Idempotent Uploads**:
    - The Sync Engine queries the Room DB for records with `sync_state = 'PENDING_UPLOAD'`.
    - Records are uploaded to Firestore using the local record's primary `id` as the Firestore document identifier (e.g., `/users/{userId}/sales/{saleId}`).
    - **Idempotency Rule**: If a network failure occurs and the upload is retried, the overwrite on Firestore with the identical document key is safe and prevents any duplicate record creation.
-6. **Initial Account/Device Sync**:
-   - Upon logging in on a new device, the local `last_sync_cursor` checkpoint is initialized to `0` or null.
-   - A full fetch of all collections under `/users/{userId}/` is downloaded and inserted into Room.
-   - All successfully inserted records are marked locally as `'SYNCED'`.
-7. **Reconnect & Retry Queue**:
+8. **Reconnect & Retry Queue**:
    - When offline, writes persist safely in Room as `'PENDING_UPLOAD'`.
    - The Sync Engine monitors network connectivity using Android's `ConnectivityManager` or periodic background tasks. Upon reconnect, the engine flushes the pending upload queue in sequential, transactional batches.
 
 ---
 
-## 3. Conflict Resolution & Application Integrity
+## 4. Conflict Resolution & Application Integrity
 
 Because the current domain models lack an `updatedAt` field on several entities (Buyers, Suppliers, Payments, Expense Payments, and Harvests), the system does not use generic Last-Write-Wins based on nonexistent domain timestamps.
 
@@ -108,7 +121,7 @@ Because the current domain models lack an `updatedAt` field on several entities 
 
 ---
 
-## 4. Current Entity & Cloud Schema Mapping
+## 5. Current Entity & Cloud Schema Mapping
 
 To maintain 100% database schema compatibility, the remote Firestore collection schema maps directly to the current Room entities and field names without inventing untyped placeholders.
 
@@ -239,7 +252,7 @@ To maintain 100% database schema compatibility, the remote Firestore collection 
 
 ---
 
-## 5. Progressive Web App (PWA) / Web Client Architecture
+## 6. Progressive Web App (PWA) / Web Client Architecture
 
 While the Android application coordinates sync via Room and the native Sync Engine, the web-based PWA operates in an independent client context:
 - **Web Local Authority**: The Web client utilizes its existing storage model (in-memory, LocalStorage, and JSON imports/exports) as its local offline authority.
@@ -248,7 +261,7 @@ While the Android application coordinates sync via Room and the native Sync Engi
 
 ---
 
-## 6. Access Control, Security, & Application Integrity
+## 7. Access Control, Security, & Application Integrity
 
 It is crucial to separate secure Firestore-level authorization rules from application-level business logic and transaction integrity:
 
@@ -288,7 +301,7 @@ service cloud.firestore {
 
 ---
 
-## 7. Implementation Boundary & Non-Functional Design
+## 8. Implementation Boundary & Non-Functional Design
 
 ### Out of Scope for Phase D, Item 1
 To preserve current app integrity:
