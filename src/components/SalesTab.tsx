@@ -50,6 +50,19 @@ export const SalesTab: React.FC<SalesTabProps> = ({
     return true;
   });
 
+  // Compute summary totals for valid filtered sales
+  const validFilteredSales = filteredSales.filter((s) => !s.isVoided);
+  const totalGrossCentavos = validFilteredSales.reduce((acc, s) => acc + s.grossAmountCentavos, 0);
+  
+  let totalCollectedCentavos = 0;
+  let totalOutstandingCentavos = 0;
+
+  validFilteredSales.forEach((sale) => {
+    const summary = StorageService.getSalePaymentSummary(sale, payments);
+    totalCollectedCentavos += summary.totalPaidCentavos;
+    totalOutstandingCentavos += summary.remainingBalanceCentavos;
+  });
+
   const handleVoidSale = (sale: Sale) => {
     const reason = prompt(`Enter reason for VOIDING this sale of ${MoneyUtils.formatPesos(sale.grossAmountCentavos)}:`);
     if (reason === null) return;
@@ -64,10 +77,39 @@ export const SalesTab: React.FC<SalesTabProps> = ({
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden space-y-4 animate-in fade-in duration-150">
       
+      {/* Top Banner: Total Sales KPIs */}
+      <div className="bg-linear-to-r from-stone-900 to-emerald-950 text-white p-5 rounded-2xl shadow-md shrink-0">
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-xs uppercase tracking-wider text-emerald-200 font-semibold">
+            Total Sales Revenue
+          </div>
+          <div className="text-xs bg-emerald-900/80 text-emerald-100 px-2 py-0.5 rounded-md font-semibold">
+            {validFilteredSales.length} Transactions
+          </div>
+        </div>
+        <div className="text-3xl font-extrabold tracking-tight">
+          {MoneyUtils.formatPesos(totalGrossCentavos)}
+        </div>
+        <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-emerald-800/60 text-xs">
+          <div>
+            <span className="text-emerald-200 block text-[11px]">Amount Collected</span>
+            <span className="text-base font-bold text-emerald-400">
+              {MoneyUtils.formatPesos(totalCollectedCentavos)}
+            </span>
+          </div>
+          <div>
+            <span className="text-emerald-200 block text-[11px]">Outstanding / Receivable</span>
+            <span className="text-base font-bold text-amber-300">
+              {MoneyUtils.formatPesos(totalOutstandingCentavos)}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Header & New Sale Button */}
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Sales Transactions</h2>
+          <h2 className="text-base font-bold text-slate-900">Sales Transactions</h2>
           <p className="text-xs text-slate-500">Record Palay grain & Copra deliveries</p>
         </div>
         <button
