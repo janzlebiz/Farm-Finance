@@ -793,7 +793,7 @@ export const StorageService = {
   createBuyer(data: Partial<Buyer> & { name: string }): Buyer {
     const bridge = getNativeBridge();
     if (bridge) {
-      const payload = { status: 'ACTIVE', ...data };
+      const payload = { ...data, status: 'ACTIVE' };
       const resStr = bridge.createBuyer(JSON.stringify(payload));
       const res = JSON.parse(resStr);
       if (res.success) {
@@ -806,8 +806,8 @@ export const StorageService = {
 
     const db = this.loadDatabase();
     const newBuyer: Buyer = {
-      status: data.status || 'ACTIVE',
       ...data,
+      status: 'ACTIVE',
       id: `buyer-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdDate: DateUtils.getTodayString()
     } as Buyer;
@@ -862,7 +862,7 @@ export const StorageService = {
   createSupplier(data: Partial<Supplier> & { name: string }): Supplier {
     const bridge = getNativeBridge();
     if (bridge) {
-      const payload = { status: 'ACTIVE', ...data };
+      const payload = { ...data, status: 'ACTIVE' };
       const resStr = bridge.createSupplier(JSON.stringify(payload));
       const res = JSON.parse(resStr);
       if (res.success) {
@@ -875,8 +875,8 @@ export const StorageService = {
 
     const db = this.loadDatabase();
     const newSupplier: Supplier = {
-      status: data.status || 'ACTIVE',
       ...data,
+      status: 'ACTIVE',
       id: `supp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdDate: DateUtils.getTodayString()
     } as Supplier;
