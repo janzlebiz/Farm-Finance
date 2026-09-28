@@ -6,7 +6,36 @@ import {
 } from '../types/sync';
 import { auth } from './firebase';
 
+let customBaseUrl: string | null = null;
+
+function getSyncApiBaseUrl(): string {
+  if (customBaseUrl !== null) {
+    return customBaseUrl;
+  }
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SYNC_API_BASE_URL) {
+    return (import.meta.env.VITE_SYNC_API_BASE_URL as string).replace(/\/+$/, '');
+  }
+  if (typeof window !== 'undefined' && (window as any).__SYNC_API_BASE_URL__) {
+    return (window as any).__SYNC_API_BASE_URL__.replace(/\/+$/, '');
+  }
+  return '';
+}
+
 export class SyncClient {
+  /**
+   * Sets custom base URL for standalone Android APK or remote hosting
+   */
+  static setBaseUrl(url: string | null): void {
+    customBaseUrl = url ? url.replace(/\/+$/, '') : null;
+  }
+
+  /**
+   * Gets the currently configured base URL
+   */
+  static getBaseUrl(): string {
+    return getSyncApiBaseUrl();
+  }
+
   private static async getAuthHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
@@ -25,7 +54,10 @@ export class SyncClient {
    */
   static async push(request: SyncPushRequest): Promise<SyncPushResponse> {
     const headers = await this.getAuthHeaders();
-    const res = await fetch('/api/sync/push', {
+    const baseUrl = getSyncApiBaseUrl();
+    const endpoint = `${baseUrl}/api/sync/push`;
+
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify(request)
@@ -44,7 +76,10 @@ export class SyncClient {
    */
   static async pull(request: SyncPullRequest): Promise<SyncPullResponse> {
     const headers = await this.getAuthHeaders();
-    const res = await fetch('/api/sync/pull', {
+    const baseUrl = getSyncApiBaseUrl();
+    const endpoint = `${baseUrl}/api/sync/pull`;
+
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify(request)
