@@ -3,7 +3,7 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 17
@@ -11,9 +11,17 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-      - name: Build and Run Android Tests
+      - name: Build Debug APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew :app:assembleDebug
-          ./gradlew :app:connectedDebugAndroidTest
+      - name: Run Instrumentation Tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: default
+          arch: x86_64
+          script: |
+            cd android
+            ./gradlew :app:connectedDebugAndroidTest
