@@ -557,6 +557,82 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(restoreRes.message.includes('Duplicate buyer ID'), 'Error must specify duplicate ID');
     });
 
+    await executeTest('Backup', 'Comprehensive Round-Trip: All 7 Entities & Relationships Preserved', () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({ name: 'Full Buyer', contactNumber: '09170001111', address: 'City', notes: '', status: 'ACTIVE' });
+      const supplier = StorageService.createSupplier({ name: 'Full Supplier', contactNumber: '09220002222', address: 'Town', notes: '', status: 'ACTIVE' });
+      const cycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Cycle 2026',
+        startDate: '2026-06-01',
+        farmField: 'North Field',
+        area: 2.0,
+        areaUnit: 'hectares',
+        status: 'ACTIVE'
+      });
+      const harvest = StorageService.createHarvest({
+        cycleId: cycle.id,
+        crop: 'Rice',
+        date: '2026-10-15',
+        quantity: 1000,
+        unit: 'kg',
+        gradeQuality: 'Grade A'
+      });
+      const sale = StorageService.createSale({
+        date: '2026-10-15',
+        crop: 'Rice',
+        quantity: 500,
+        unit: 'kg',
+        unitPriceCentavos: 3000,
+        buyerId: buyer.id,
+        cycleId: cycle.id
+      }).sale!;
+      const payment = StorageService.recordPayment({
+        saleId: sale.id,
+        amountCentavos: 500000,
+        date: '2026-10-15',
+        paymentMethod: 'CASH'
+      }).payment!;
+      const expense = StorageService.createExpense({
+        date: '2026-10-15',
+        category: 'Fertilizer',
+        amountIncurredCentavos: 200000,
+        amountPaidCentavos: 200000,
+        description: 'Urea bags',
+        supplierId: supplier.id,
+        cycleId: cycle.id,
+        crop: 'Rice'
+      }).expense!;
+
+      const backupJson = StorageService.exportBackupJson();
+
+      // Reset and restore
+      StorageService.resetToCleanState();
+      const res = StorageService.validateAndRestoreBackup(backupJson);
+      assert(res.success, `Full round-trip restore must succeed: ${res.message}`);
+
+      const db = StorageService.loadDatabase();
+      assert(db.buyers.length === 1 && db.buyers[0].id === buyer.id, 'Buyer preserved');
+      assert(db.suppliers.length === 1 && db.suppliers[0].id === supplier.id, 'Supplier preserved');
+      assert(db.cycles.length === 1 && db.cycles[0].id === cycle.id, 'Cycle preserved');
+      assert(db.harvests.length === 1 && db.harvests[0].id === harvest.id, 'Harvest preserved');
+      assert(db.sales.length === 1 && db.sales[0].id === sale.id, 'Sale preserved');
+      assert(db.payments.length === 1 && db.payments[0].id === payment.id, 'Payment preserved');
+      assert(db.expenses.length === 1 && db.expenses[0].id === expense.id, 'Expense preserved');
+    });
+
+    await executeTest('Backup', 'Validation: Reject Unsupported Backup Schema Version', () => {
+      StorageService.resetToCleanState();
+      const backupJson = StorageService.exportBackupJson();
+      const parsed = JSON.parse(backupJson);
+      parsed.backupSchemaVersion = 999;
+      parsed.integrity.checksum = computeSha256Sync(canonicalJsonStringify(parsed.database));
+
+      const res = StorageService.validateAndRestoreBackup(JSON.stringify(parsed));
+      assert(!res.success, 'Must reject unsupported backup schema version');
+      assert(res.message.includes('Unsupported backup schema version'), 'Message must indicate schema version mismatch');
+    });
+
     // ----------------------------------------------------
     // SUITE 3: MIGRATION FROM V1.0 LOCALSTORAGE (SECTION 21)
     // ----------------------------------------------------
