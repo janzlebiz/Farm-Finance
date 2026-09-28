@@ -48,25 +48,39 @@ The current Android codebase runs **Room Database Version 4**, with existing mig
 - Alter existing Room tables to add a `last_synced_at` column (Integer millisecond timestamp, defaulting to `0`).
 
 ### Cursor & Version Separation (Sync Cursor Model)
-Because current domain schemas lack a universal `updatedAt` field (Buyers, Suppliers, Payments, Expense Payments, and Harvests do not have `updatedAt` in their schema; Audit Logs use `timestamp`), we do **not** rely on existing domain fields for sync boundaries. Instead, we define two distinct, decoupled concepts:
+Because current domain schemas lack a universal `updatedAt` field (Buyers, Suppliers, Payments, Expense Payments, and Harvests do not have `updatedAt` in their schema; Audit Logs use `timestamp`), we do **not** rely on existing domain fields for sync boundaries. 
+
+Firestore query cursors and simple document timestamps are **NOT** themselves the application's durable global synchronization sequence. Instead, we define two distinct, decoupled synchronization concepts:
 
 1. **`record_sync_version` (Conflict Resolution Parameter)**:
    - This is a per-record version integer saved in the local table row via the Migration 4→5.
    - It is used strictly for **local-vs-remote conflict detection** and controlled conflict resolution during sync processes.
-   - **Crucially, `record_sync_version` is NOT the incremental-sync cursor.**
-2. **`change_cursor` (Global Sync Sequence Checkpoint)**:
-   - This is a monotonically increasing, collection/account-level sequence string or server timestamp generated dynamically by Firestore upon any document insert/write.
-   - The change cursor provides deterministic global ordering of all mutations and does not rely on incrementing record-level versions independently.
-   - The Sync Engine persists a local `last_sync_cursor` checkpoint. During an incremental sync cycle, the Sync Engine queries Firestore for any documents with `change_cursor` > `last_sync_cursor`.
-3. **Idempotent Uploads**:
+   - **`record_sync_version` is NOT the incremental-sync cursor.**
+2. **`change_cursor` (Server-Managed Global Sync Sequence Checkpoint)**:
+   - This is an explicit, **server-managed synchronization sequence** that provides deterministic global ordering of all mutations. It is not generated or incremented independently by the clients.
+   - Change-log cursor allocation and protected synchronization metadata are server-managed (e.g., via server-side database triggers, transaction hooks, or Cloud Functions) and must not be freely client-writable.
+3. **Proposed Server-Side Sync Change-Log Design**:
+   - The server maintains a change-log collection:
+     `/users/{uid}/_sync/change_log/{changeCursor}`
+   - Each change-log entry conceptually contains:
+     - `change_cursor`: The unique, monotonically increasing sequence number/ID.
+     - `collection`: Name of the collection that changed (e.g., `"sales"`, `"payments"`).
+     - `document_id`: The database UUID key of the target document.
+     - `operation`: The action performed (`"UPSERT"`, `"VOID"`, `"DELETE"`).
+     - `record_sync_version`: The record-level sync version.
+     - `timestamp`: Server-side atomic transaction timestamp.
+4. **`last_sync_cursor` (Local Sync Position)**:
+   - This is a local persisted checkpoint stored by the Sync Engine, indicating the last successfully processed change-log position (`change_cursor`).
+   - During an incremental sync cycle, the Sync Engine queries `/users/{uid}/_sync/change_log` for entries where `change_cursor` > `last_sync_cursor`.
+5. **Idempotent Uploads**:
    - The Sync Engine queries the Room DB for records with `sync_state = 'PENDING_UPLOAD'`.
    - Records are uploaded to Firestore using the local record's primary `id` as the Firestore document identifier (e.g., `/users/{userId}/sales/{saleId}`).
    - **Idempotency Rule**: If a network failure occurs and the upload is retried, the overwrite on Firestore with the identical document key is safe and prevents any duplicate record creation.
-4. **Initial Account/Device Sync**:
+6. **Initial Account/Device Sync**:
    - Upon logging in on a new device, the local `last_sync_cursor` checkpoint is initialized to `0` or null.
    - A full fetch of all collections under `/users/{userId}/` is downloaded and inserted into Room.
    - All successfully inserted records are marked locally as `'SYNCED'`.
-5. **Reconnect & Retry Queue**:
+7. **Reconnect & Retry Queue**:
    - When offline, writes persist safely in Room as `'PENDING_UPLOAD'`.
    - The Sync Engine monitors network connectivity using Android's `ConnectivityManager` or periodic background tasks. Upon reconnect, the engine flushes the pending upload queue in sequential, transactional batches.
 
@@ -242,11 +256,18 @@ It is crucial to separate secure Firestore-level authorization rules from applic
 - Firestore Security Rules are used **only** for authentication and ownership partition.
 - They do **not** enforce void-and-replace mechanics, double-spending logic, or audit log schemas.
 - Client-side `userId` or `ownerId` fields are never trusted; verification of ownership is based strictly on the cryptographically signed `request.auth.uid`.
+- **Change Log Security**: Ordinary authenticated clients are strictly forbidden from arbitrarily creating, modifying, or deleting any documents inside the `_sync` collection path. This metadata is strictly read-only for clients, ensuring the sequence cannot be compromised.
 
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Change Log: Read-only access to prevent client-side sequence tampering
+    match /users/{userId}/_sync/{document=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false; // Writing sequence data must be handled exclusively by trusted server triggers
+    }
     
     // Force strict authenticated ownership check at the path parameter level
     match /users/{userId}/{collectionName}/{documentId} {
