@@ -26,14 +26,9 @@ function arePayloadsIdentical(incomingPayload: any, existingServerRecord: any, e
     delete normB[k];
   }
 
-  const keysA = Object.keys(normA).filter((k) => normA[k] !== undefined).sort();
-  const keysB = Object.keys(normB).filter((k) => normB[k] !== undefined).sort();
-
-  if (keysA.length !== keysB.length) return false;
-
-  for (let i = 0; i < keysA.length; i++) {
-    const key = keysA[i];
-    if (key !== keysB[i]) return false;
+  // Every key present in the incoming payload must match the existing server document
+  for (const key of Object.keys(normA)) {
+    if (metadataKeys.has(key)) continue;
     const valA = normA[key];
     const valB = normB[key];
 
@@ -46,6 +41,11 @@ function arePayloadsIdentical(incomingPayload: any, existingServerRecord: any, e
       return false;
     }
   }
+
+  // Void state must also match
+  const incomingIsVoid = normA.isVoided === true || normA.status === 'VOID';
+  const serverIsVoid = normB.isVoided === true || normB.status === 'VOID';
+  if (incomingIsVoid !== serverIsVoid) return false;
 
   return true;
 }
@@ -60,12 +60,11 @@ export class ServerSyncService {
    */
   static async processPush(userId: string, changes: SyncChangeItem[]): Promise<SyncPushResponse> {
     if (!userId || typeof userId !== 'string') {
-      throw new Error('Invalid or missing authenticated userId');
+      throw new Error('Invalid or missing authenticated userId for sync operation');
     }
 
-    if (!changes || changes.length === 0) {
-      const metaRef = adminDb.doc(`users/${userId}/_sync/meta`);
-      const metaDoc = await metaRef.get();
+    if (!Array.isArray(changes) || changes.length === 0) {
+      const metaDoc = await adminDb.doc(`users/${userId}/_sync/meta`).get();
       const currentCursor = metaDoc.exists ? (metaDoc.data()?.current_cursor || 0) : 0;
       return {
         results: [],
@@ -73,9 +72,8 @@ export class ServerSyncService {
       };
     }
 
-    // Execute atomic Firestore transaction for the entire push batch
     return await adminDb.runTransaction(async (transaction) => {
-      // 1. Read the user's sync metadata
+      // 1. Read authoritative sync metadata
       const metaRef = adminDb.doc(`users/${userId}/_sync/meta`);
       const metaDoc = await transaction.get(metaRef);
       let currentCursor = metaDoc.exists ? (metaDoc.data()?.current_cursor || 0) : 0;
@@ -140,7 +138,7 @@ export class ServerSyncService {
             status: 'CONFLICT',
             serverVersion,
             serverRecord: existingRecord,
-            reason: `Stale base version ${item.baseVersion}. Current server version is ${serverVersion}.`
+            reason: `Optimistic concurrency conflict: client baseVersion (${item.baseVersion}) is behind server version (${serverVersion})`
           });
           continue;
         }
@@ -151,9 +149,12 @@ export class ServerSyncService {
         const newVersion = serverVersion + 1;
         const lastSyncedAt = Date.now();
 
+        const isVoid = item.operation === 'VOID' || item.payload?.isVoided === true || item.payload?.status === 'VOID';
         const serverAssignedRecord = {
           ...item.payload,
           id: item.entityId,
+          isVoided: isVoid,
+          status: isVoid ? 'VOID' : (item.payload?.status || 'ACTIVE'),
           sync_state: 'SYNCED',
           record_sync_version: newVersion,
           last_synced_at: lastSyncedAt
@@ -184,12 +185,16 @@ export class ServerSyncService {
         });
       }
 
-      // Update sync metadata with the latest allocated cursor
-      if (cursorAdvanced || !metaDoc.exists) {
-        transaction.set(metaRef, {
-          current_cursor: currentCursor,
-          updatedAt: Date.now()
-        }, { merge: true });
+      // Update sync metadata with new monotonic cursor if any mutations applied
+      if (cursorAdvanced) {
+        transaction.set(
+          metaRef,
+          {
+            current_cursor: currentCursor,
+            updated_at: Date.now()
+          },
+          { merge: true }
+        );
       }
 
       return {
@@ -200,30 +205,20 @@ export class ServerSyncService {
   }
 
   /**
-   * Process client pull request:
-   * - sinceCursor === 0: Full dataset bootstrap directly from authoritative Firestore business_data
-   * - sinceCursor > 0: Incremental change log replay from Firestore _sync/change_log_*
-   * - sinceCursor > currentServerCursor: Automatic cursor recovery triggering full bootstrap
-   *
-   * The userId parameter is the verified, authenticated user identity.
+   * Process client pull request.
+   * If sinceCursor is 0 or negative/ahead, returns full dataset (bootstrap).
+   * If sinceCursor > 0, returns incremental change-log entries.
    */
   static async processPull(userId: string, sinceCursor: number): Promise<SyncPullResponse> {
     if (!userId || typeof userId !== 'string') {
-      throw new Error('Invalid or missing authenticated userId');
+      throw new Error('Invalid or missing authenticated userId for sync operation');
     }
 
-    const metaRef = adminDb.doc(`users/${userId}/_sync/meta`);
-    const metaDoc = await metaRef.get();
+    const metaDoc = await adminDb.doc(`users/${userId}/_sync/meta`).get();
     const currentServerCursor = metaDoc.exists ? (metaDoc.data()?.current_cursor || 0) : 0;
 
-    // CURSOR RECOVERY:
-    // If client cursor is invalid (negative or strictly greater than server cursor),
-    // fall back to full bootstrap (sinceCursor = 0) so the client recovers seamlessly.
-    const isInvalidCursor = sinceCursor < 0 || sinceCursor > currentServerCursor;
-    const effectiveSinceCursor = isInvalidCursor ? 0 : sinceCursor;
-
-    // 1. Bootstrap: Fetch entire user dataset
-    if (effectiveSinceCursor === 0) {
+    // Bootstrap Sync (sinceCursor <= 0 or client cursor is corrupted/ahead of server)
+    if (sinceCursor <= 0 || sinceCursor > currentServerCursor) {
       const dataset: FullSyncDataset = {
         buyers: [],
         suppliers: [],
@@ -236,14 +231,14 @@ export class ServerSyncService {
         audit_logs: []
       };
 
-      const dataCol = adminDb.collection(`users/${userId}/business_data`);
-      const snapshot = await dataCol.get();
+      const businessDataSnap = await adminDb.collection(`users/${userId}/business_data`).get();
+      businessDataSnap.forEach((doc) => {
+        const data = doc.data();
+        const docId = doc.id;
+        const firstUnderscore = docId.indexOf('_');
+        const entityType = firstUnderscore > 0 ? (docId.substring(0, firstUnderscore) as SyncEntityType) : null;
 
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        const docId = docSnap.id;
-        const entityType = docId.split('_')[0] as SyncEntityType;
-        if (dataset[entityType]) {
+        if (entityType && entityType in dataset) {
           (dataset[entityType] as any[]).push(data);
         }
       });
@@ -255,18 +250,12 @@ export class ServerSyncService {
       };
     }
 
-    // 2. Incremental: Fetch change logs newer than sinceCursor
+    // Incremental Sync (sinceCursor > 0)
     const changes: SyncChangeLogEntry[] = [];
-    if (currentServerCursor > effectiveSinceCursor) {
-      const promises: Promise<FirebaseFirestore.DocumentSnapshot>[] = [];
-      for (let c = effectiveSinceCursor + 1; c <= currentServerCursor; c++) {
-        promises.push(adminDb.doc(`users/${userId}/_sync/change_log_${c}`).get());
-      }
-      const snaps = await Promise.all(promises);
-      for (const snap of snaps) {
-        if (snap.exists) {
-          changes.push(snap.data() as SyncChangeLogEntry);
-        }
+    for (let c = sinceCursor + 1; c <= currentServerCursor; c++) {
+      const changeDoc = await adminDb.doc(`users/${userId}/_sync/change_log_${c}`).get();
+      if (changeDoc.exists) {
+        changes.push(changeDoc.data() as SyncChangeLogEntry);
       }
     }
 
