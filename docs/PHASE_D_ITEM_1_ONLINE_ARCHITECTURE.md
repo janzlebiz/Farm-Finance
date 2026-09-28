@@ -55,10 +55,16 @@ Because current domain schemas lack a universal `updatedAt` field (Buyers, Suppl
 
 Firestore query cursors and simple document timestamps are **NOT** themselves the application's durable global synchronization sequence. Instead, we define two distinct, decoupled synchronization concepts:
 
-1. **`record_sync_version` (Conflict Resolution Parameter)**:
+1. **Server-Authoritative `record_sync_version` (Conflict Resolution Parameter)**:
    - This is a per-record version integer saved in the local table row via the Migration 4→5.
-   - It is used strictly for **local-vs-remote conflict detection** and controlled conflict resolution during sync processes.
    - **`record_sync_version` is NOT the incremental-sync cursor.**
+   - For all synchronized records, `record_sync_version` is **ultimately server-authoritative**:
+     - The client submits its current known/base `record_sync_version` with any mutation.
+     - The trusted server-side synchronization logic validates this base version.
+     - The server atomically assigns or increments the authoritative record version when accepting the mutation.
+     - A client must not be allowed to arbitrarily choose or advance this authoritative version.
+     - Stale concurrent mutations are detected through the version check and routed through the entity-specific conflict policy.
+     - Financial records continue to use existing void-and-replace rules rather than generic version-based LWW.
 2. **`change_cursor` (Server-Managed User-Scoped Sync Sequence Checkpoint)**:
    - This is an explicit, **server-managed synchronization sequence** that provides deterministic ordering of all mutations. It is not generated or incremented independently by clients.
    - The `change_cursor` is **strictly scoped to the individual user's synchronization stream** under `/users/{uid}/_sync/` and is monotonically increasing, server-managed, and deterministic. It is NOT a global, database-wide sequence across different users.
@@ -82,14 +88,15 @@ Firestore query cursors and simple document timestamps are **NOT** themselves th
 5. **`last_sync_cursor` (Local Sync Position)**:
    - This is a local persisted checkpoint stored by the Sync Engine, indicating the last successfully processed change-log position (`change_cursor`).
    - During an incremental sync cycle, the Sync Engine queries `/users/{uid}/_sync/change_log` for entries where `change_cursor` > `last_sync_cursor`.
-6. **Deterministic Initial Sync Snapshot Boundary**:
-   - When a user logs in on a new device, a simple "full fetch starting from cursor 0" is prone to missing concurrent writes that occur during initial synchronization. To prevent this, the client executes a deterministic bootstrap sequence:
-     1. Obtain a server-defined bootstrap/snapshot cursor **`S`** representing the absolute current state of the database.
-     2. Fetch the user's synchronized data snapshot matching that boundary **`S`**.
-     3. Apply the full snapshot transactionally to Room.
+6. **Deterministic Initial Sync Bootstrap Protocol**:
+   - When a user logs in on a new device, the client executes a deterministic bootstrap sequence:
+     1. Obtain the current server-managed `change_cursor` value **`S`** before starting the full data fetch.
+     2. Fetch the user's current full synchronized dataset.
+     3. Apply that full dataset transactionally to Room.
      4. Persist the local checkpoint: `last_sync_cursor = S`.
-     5. Resume incremental synchronization using `change_cursor > S`.
-   - This ensures that any writes occurring during the initial sync download phase are captured safely in the subsequent incremental run, preserving full synchronization consistency.
+     5. Query and process/replay every change-log entry where `change_cursor > S`.
+     6. Continue normal incremental synchronization from the resulting checkpoint.
+   - **Advantage**: This avoids requiring Firestore to provide a historical snapshot keyed by the custom change-cursor, while guaranteeing that any concurrent changes occurring after `S` are recovered from the change log without being missed.
 7. **Idempotent Uploads**:
    - The Sync Engine queries the Room DB for records with `sync_state = 'PENDING_UPLOAD'`.
    - Records are uploaded to Firestore using the local record's primary `id` as the Firestore document identifier (e.g., `/users/{userId}/sales/{saleId}`).
@@ -112,7 +119,7 @@ Because the current domain models lack an `updatedAt` field on several entities 
   - **Void Propagation**: Void status propagates across devices to prevent calculation mismatch of outstanding balances or double payments.
 
 ### Controlled Conflict Resolution (Master Data & Production Cycles)
-- **Master Data (Buyers, Suppliers, Harvests)**: These records utilize **Controlled Version-Based Conflict Resolution** managed via the sync-layer `record_sync_version` column.
+- **Master Data (Buyers, Suppliers, Harvests)**: These records utilize **Controlled Version-Based Conflict Resolution** managed via the server-authoritative `record_sync_version` column.
 - **Production Cycles**: Uses `record_sync_version` tracking or `updatedAt` (which exists on Production Cycles) for conflict resolution.
 - If both local Room records and cloud documents were edited, the record with the higher numeric `record_sync_version` (or timestamp where available) wins.
 
