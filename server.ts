@@ -1,10 +1,41 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ServerSyncService } from './src/server/syncService';
+import { adminAuth } from './src/server/adminFirebase';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+export interface AuthenticatedRequest extends Request {
+  userUid?: string;
+}
+
+/**
+ * Express middleware to authenticate requests via Firebase ID Token
+ */
+export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid authentication token' });
+  }
+
+  const token = authHeader.split('Bearer ')[1]?.trim();
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid authentication token' });
+  }
+
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    if (!decodedToken || !decodedToken.uid) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid token claims' });
+    }
+    req.userUid = decodedToken.uid;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+  }
+}
 
 async function createServer() {
   const app = express();
@@ -19,9 +50,11 @@ async function createServer() {
   });
 
   // Authoritative Trusted Server Sync Push Endpoint
-  app.post('/api/sync/push', async (req, res) => {
+  app.post('/api/sync/push', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const response = await ServerSyncService.processPush(req.body);
+      const userUid = req.userUid!;
+      const changes = Array.isArray(req.body.changes) ? req.body.changes : [];
+      const response = await ServerSyncService.processPush(userUid, changes);
       res.json(response);
     } catch (err: any) {
       console.error('Error in /api/sync/push:', err);
@@ -30,9 +63,11 @@ async function createServer() {
   });
 
   // Authoritative Trusted Server Sync Pull Endpoint
-  app.post('/api/sync/pull', async (req, res) => {
+  app.post('/api/sync/pull', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const response = await ServerSyncService.processPull(req.body);
+      const userUid = req.userUid!;
+      const sinceCursor = typeof req.body.sinceCursor === 'number' ? req.body.sinceCursor : 0;
+      const response = await ServerSyncService.processPull(userUid, sinceCursor);
       res.json(response);
     } catch (err: any) {
       console.error('Error in /api/sync/pull:', err);
@@ -62,8 +97,9 @@ async function createServer() {
   });
 }
 
-// Start server if this file is executed directly
-if (process.env.NODE_ENV !== 'test') {
+// Start server only when executed directly as entrypoint
+const isMain = process.argv[1] && (process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.js'));
+if (isMain && process.env.NODE_ENV !== 'test') {
   createServer().catch((err) => {
     console.error('Failed to start server:', err);
     process.exit(1);
