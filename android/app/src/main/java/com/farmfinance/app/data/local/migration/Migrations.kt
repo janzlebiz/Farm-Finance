@@ -81,3 +81,28 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+/**
+ * Migration from Database Version 4 to Version 5:
+ * Adds sync metadata columns (`sync_state`, `record_sync_version`, `last_synced_at`)
+ * to all 9 synchronized database tables.
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val tables = listOf(
+            "buyers",
+            "suppliers",
+            "sales",
+            "payments",
+            "expenses",
+            "expense_payments",
+            "production_cycles",
+            "harvests",
+            "audit_logs"
+        )
+        for (table in tables) {
+            db.execSQL("ALTER TABLE $table ADD COLUMN sync_state TEXT NOT NULL DEFAULT 'SYNCED'")
+            db.execSQL("ALTER TABLE $table ADD COLUMN record_sync_version INTEGER NOT NULL DEFAULT 1")
+            db.execSQL("ALTER TABLE $table ADD COLUMN last_synced_at INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+}

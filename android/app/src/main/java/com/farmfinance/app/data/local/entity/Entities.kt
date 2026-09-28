@@ -16,7 +16,10 @@ data class BuyerEntity(
     val address: String,
     val notes: String,
     val createdDate: String,
-    val isActive: Boolean
+    val isActive: Boolean,
+    val sync_state: String = "SYNCED",
+    val record_sync_version: Long = 1L,
+    val last_synced_at: Long = 0L
 )
 
 @Entity(
@@ -30,7 +33,10 @@ data class SupplierEntity(
     val address: String,
     val notes: String,
     val createdDate: String,
-    val isActive: Boolean
+    val isActive: Boolean,
+    val sync_state: String = "SYNCED",
+    val record_sync_version: Long = 1L,
+    val last_synced_at: Long = 0L
 )
 
 @Entity(
@@ -64,7 +70,10 @@ data class SaleEntity(
     val harvestId: String?,
     val isVoided: Boolean,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val sync_state: String = "SYNCED",
+    val record_sync_version: Long = 1L,
+    val last_synced_at: Long = 0L
 )
 
 @Entity(
@@ -99,7 +108,10 @@ data class PaymentEntity(
     val reference: String,
     val notes: String,
     val isVoided: Boolean,
-    val createdAt: Long
+    val createdAt: Long,
+    val sync_state: String = "SYNCED",
+    val record_sync_version: Long = 1L,
+    val last_synced_at: Long = 0L
 )
 
 @Entity(
@@ -126,7 +138,10 @@ data class ExpenseEntity(
     val notes: String,
     val isVoided: Boolean,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val sync_state: String = "SYNCED",
+    val record_sync_version: Long = 1L,
+    val last_synced_at: Long = 0L
 )
 
 @Entity(
@@ -150,7 +165,10 @@ data class ProductionCycleEntity(
     val status: String,
     val notes: String,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val sync_state: String = "SYNCED",
+    val record_sync_version: Long = 1L,
+    val last_synced_at: Long = 0L
 )
 
 @Entity(
@@ -171,7 +189,10 @@ data class HarvestEntity(
     val sellingPriceCentavos: Long?,
     val buyerId: String?,
     val notes: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val sync_state: String = "SYNCED",
+    val record_sync_version: Long = 1L,
+    val last_synced_at: Long = 0L
 )
 
 @Entity(
@@ -199,7 +220,10 @@ data class ExpensePaymentEntity(
     val reference: String,
     val notes: String,
     val isVoided: Boolean,
-    val createdAt: Long
+    val createdAt: Long,
+    val sync_state: String = "SYNCED",
+    val record_sync_version: Long = 1L,
+    val last_synced_at: Long = 0L
 )
 
 @Entity(
@@ -217,5 +241,8 @@ data class AuditLogEntity(
     val eventType: String,
     val summary: String,
     val metadataJson: String,
-    val appVersion: String
+    val appVersion: String,
+    val sync_state: String = "SYNCED",
+    val record_sync_version: Long = 1L,
+    val last_synced_at: Long = 0L
 )
