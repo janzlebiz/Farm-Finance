@@ -98,13 +98,13 @@ class RoomMigrationTest {
                 if (columnName == "sync_state") {
                     hasSyncState = true
                     assertEquals("TEXT", columnType.uppercase())
-                    // SQLite representation for default TEXT strings may wrap in quotes
-                    assertTrue(defaultValue == "'SYNCED'" || defaultValue == "SYNCED")
+                    // SQLite representation for default TEXT strings wraps in quotes
+                    assertTrue(defaultValue == "'PENDING_UPLOAD'" || defaultValue == "PENDING_UPLOAD")
                 }
                 if (columnName == "record_sync_version") {
                     hasSyncVersion = true
                     assertEquals("INTEGER", columnType.uppercase())
-                    assertEquals("1", defaultValue)
+                    assertEquals("0", defaultValue)
                 }
                 if (columnName == "last_synced_at") {
                     hasLastSynced = true
@@ -124,8 +124,8 @@ class RoomMigrationTest {
         assertTrue(buyerCursor.moveToFirst())
         assertEquals("Juan", buyerCursor.getString(buyerCursor.getColumnIndexOrThrow("name")))
         assertEquals("09171234567", buyerCursor.getString(buyerCursor.getColumnIndexOrThrow("contactNumber")))
-        assertEquals("SYNCED", buyerCursor.getString(buyerCursor.getColumnIndexOrThrow("sync_state")))
-        assertEquals(1L, buyerCursor.getLong(buyerCursor.getColumnIndexOrThrow("record_sync_version")))
+        assertEquals("PENDING_UPLOAD", buyerCursor.getString(buyerCursor.getColumnIndexOrThrow("sync_state")))
+        assertEquals(0L, buyerCursor.getLong(buyerCursor.getColumnIndexOrThrow("record_sync_version")))
         assertEquals(0L, buyerCursor.getLong(buyerCursor.getColumnIndexOrThrow("last_synced_at")))
         buyerCursor.close()
 
@@ -135,20 +135,20 @@ class RoomMigrationTest {
         assertEquals("buyer_1", saleCursor.getString(saleCursor.getColumnIndexOrThrow("buyerId")))
         assertEquals("cycle_1", saleCursor.getString(saleCursor.getColumnIndexOrThrow("cycleId")))
         assertEquals("harvest_1", saleCursor.getString(saleCursor.getColumnIndexOrThrow("harvestId")))
-        assertEquals("SYNCED", saleCursor.getString(saleCursor.getColumnIndexOrThrow("sync_state")))
+        assertEquals("PENDING_UPLOAD", saleCursor.getString(saleCursor.getColumnIndexOrThrow("sync_state")))
         saleCursor.close()
 
         val expenseCursor = db.query("SELECT * FROM expenses WHERE id = 'expense_1'")
         assertTrue(expenseCursor.moveToFirst())
         assertEquals("Fertilizer", expenseCursor.getString(expenseCursor.getColumnIndexOrThrow("category")))
         assertEquals("supplier_1", expenseCursor.getString(expenseCursor.getColumnIndexOrThrow("supplierId")))
-        assertEquals("SYNCED", expenseCursor.getString(expenseCursor.getColumnIndexOrThrow("sync_state")))
+        assertEquals("PENDING_UPLOAD", expenseCursor.getString(expenseCursor.getColumnIndexOrThrow("sync_state")))
         expenseCursor.close()
 
         val auditCursor = db.query("SELECT * FROM audit_logs WHERE id = 'audit_1'")
         assertTrue(auditCursor.moveToFirst())
         assertEquals("Created Rice Sale Record", auditCursor.getString(auditCursor.getColumnIndexOrThrow("summary")))
-        assertEquals("SYNCED", auditCursor.getString(auditCursor.getColumnIndexOrThrow("sync_state")))
+        assertEquals("PENDING_UPLOAD", auditCursor.getString(auditCursor.getColumnIndexOrThrow("sync_state")))
         auditCursor.close()
 
         db.close()

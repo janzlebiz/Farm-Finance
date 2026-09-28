@@ -17,8 +17,8 @@ data class BuyerEntity(
     val notes: String,
     val createdDate: String,
     val isActive: Boolean,
-    val sync_state: String = "SYNCED",
-    val record_sync_version: Long = 1L,
+    val sync_state: String = "PENDING_UPLOAD",
+    val record_sync_version: Long = 0L,
     val last_synced_at: Long = 0L
 )
 
@@ -34,8 +34,8 @@ data class SupplierEntity(
     val notes: String,
     val createdDate: String,
     val isActive: Boolean,
-    val sync_state: String = "SYNCED",
-    val record_sync_version: Long = 1L,
+    val sync_state: String = "PENDING_UPLOAD",
+    val record_sync_version: Long = 0L,
     val last_synced_at: Long = 0L
 )
 
@@ -71,8 +71,8 @@ data class SaleEntity(
     val isVoided: Boolean,
     val createdAt: Long,
     val updatedAt: Long,
-    val sync_state: String = "SYNCED",
-    val record_sync_version: Long = 1L,
+    val sync_state: String = "PENDING_UPLOAD",
+    val record_sync_version: Long = 0L,
     val last_synced_at: Long = 0L
 )
 
@@ -109,8 +109,8 @@ data class PaymentEntity(
     val notes: String,
     val isVoided: Boolean,
     val createdAt: Long,
-    val sync_state: String = "SYNCED",
-    val record_sync_version: Long = 1L,
+    val sync_state: String = "PENDING_UPLOAD",
+    val record_sync_version: Long = 0L,
     val last_synced_at: Long = 0L
 )
 
@@ -139,8 +139,8 @@ data class ExpenseEntity(
     val isVoided: Boolean,
     val createdAt: Long,
     val updatedAt: Long,
-    val sync_state: String = "SYNCED",
-    val record_sync_version: Long = 1L,
+    val sync_state: String = "PENDING_UPLOAD",
+    val record_sync_version: Long = 0L,
     val last_synced_at: Long = 0L
 )
 
@@ -166,8 +166,8 @@ data class ProductionCycleEntity(
     val notes: String,
     val createdAt: Long,
     val updatedAt: Long,
-    val sync_state: String = "SYNCED",
-    val record_sync_version: Long = 1L,
+    val sync_state: String = "PENDING_UPLOAD",
+    val record_sync_version: Long = 0L,
     val last_synced_at: Long = 0L
 )
 
@@ -190,8 +190,8 @@ data class HarvestEntity(
     val buyerId: String?,
     val notes: String,
     val createdAt: Long,
-    val sync_state: String = "SYNCED",
-    val record_sync_version: Long = 1L,
+    val sync_state: String = "PENDING_UPLOAD",
+    val record_sync_version: Long = 0L,
     val last_synced_at: Long = 0L
 )
 
@@ -221,8 +221,8 @@ data class ExpensePaymentEntity(
     val notes: String,
     val isVoided: Boolean,
     val createdAt: Long,
-    val sync_state: String = "SYNCED",
-    val record_sync_version: Long = 1L,
+    val sync_state: String = "PENDING_UPLOAD",
+    val record_sync_version: Long = 0L,
     val last_synced_at: Long = 0L
 )
 
@@ -242,7 +242,7 @@ data class AuditLogEntity(
     val summary: String,
     val metadataJson: String,
     val appVersion: String,
-    val sync_state: String = "SYNCED",
-    val record_sync_version: Long = 1L,
+    val sync_state: String = "PENDING_UPLOAD",
+    val record_sync_version: Long = 0L,
     val last_synced_at: Long = 0L
 )

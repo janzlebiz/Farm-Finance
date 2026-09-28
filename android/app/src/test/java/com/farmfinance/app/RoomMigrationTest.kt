@@ -71,14 +71,14 @@ class RoomMigrationTest {
             val syncStateAdded = executedSql.any { sql ->
                 sql.contains("ALTER TABLE $table", ignoreCase = true) &&
                         sql.contains("ADD COLUMN sync_state", ignoreCase = true) &&
-                        sql.contains("TEXT NOT NULL DEFAULT 'SYNCED'", ignoreCase = true)
+                        sql.contains("TEXT NOT NULL DEFAULT 'PENDING_UPLOAD'", ignoreCase = true)
             }
             assertTrue("ALTER TABLE to add sync_state to $table should be executed", syncStateAdded)
 
             val recordSyncVersionAdded = executedSql.any { sql ->
                 sql.contains("ALTER TABLE $table", ignoreCase = true) &&
                         sql.contains("ADD COLUMN record_sync_version", ignoreCase = true) &&
-                        sql.contains("INTEGER NOT NULL DEFAULT 1", ignoreCase = true)
+                        sql.contains("INTEGER NOT NULL DEFAULT 0", ignoreCase = true)
             }
             assertTrue("ALTER TABLE to add record_sync_version to $table should be executed", recordSyncVersionAdded)
 
@@ -135,9 +135,9 @@ class RoomMigrationTest {
 
             val syncStateAlter = executedSql.any { sql ->
                 sql.contains("ALTER TABLE buyers", ignoreCase = true) &&
-                        sql.contains("ADD COLUMN sync_state TEXT NOT NULL DEFAULT 'SYNCED'", ignoreCase = true)
+                        sql.contains("ADD COLUMN sync_state TEXT NOT NULL DEFAULT 'PENDING_UPLOAD'", ignoreCase = true)
             }
-            assertTrue("sync_state column must be successfully added to buyers table", syncStateAlter)
+            assertTrue("sync_state column must be successfully added to buyers table with PENDING_UPLOAD", syncStateAlter)
         } catch (e: Exception) {
             fail("Proxy validation test threw an unexpected exception: ${e.message}")
         }

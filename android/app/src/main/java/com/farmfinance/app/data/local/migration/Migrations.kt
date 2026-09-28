@@ -61,8 +61,7 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
                 reference TEXT NOT NULL,
                 notes TEXT NOT NULL,
                 isVoided INTEGER NOT NULL,
-                createdAt INTEGER NOT NULL,
-                FOREIGN KEY(expenseId) REFERENCES expenses(id) ON UPDATE NO ACTION ON DELETE RESTRICT
+                createdAt INTEGER NOT NULL
             )
             """.trimIndent()
         )
@@ -85,6 +84,7 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
  * Migration from Database Version 4 to Version 5:
  * Adds sync metadata columns (`sync_state`, `record_sync_version`, `last_synced_at`)
  * to all 9 synchronized database tables.
+ * Default values indicate PENDING_UPLOAD state for existing records (local-only data that has never synced).
  */
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -100,8 +100,8 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
             "audit_logs"
         )
         for (table in tables) {
-            db.execSQL("ALTER TABLE $table ADD COLUMN sync_state TEXT NOT NULL DEFAULT 'SYNCED'")
-            db.execSQL("ALTER TABLE $table ADD COLUMN record_sync_version INTEGER NOT NULL DEFAULT 1")
+            db.execSQL("ALTER TABLE $table ADD COLUMN sync_state TEXT NOT NULL DEFAULT 'PENDING_UPLOAD'")
+            db.execSQL("ALTER TABLE $table ADD COLUMN record_sync_version INTEGER NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE $table ADD COLUMN last_synced_at INTEGER NOT NULL DEFAULT 0")
         }
     }
