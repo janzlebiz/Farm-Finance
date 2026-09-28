@@ -14,7 +14,8 @@
     "test": "tsx scripts/runTests.ts",
     "test:security": "tsx scripts/testSecurityRules.ts",
     "test:sync": "tsx scripts/testSyncFoundation.ts",
-    "test:gate1": "tsx scripts/testLiveCloudSync.ts"
+    "test:gate1": "tsx scripts/testLiveCloudSync.ts",
+    "test:gate2": "tsx scripts/testGate2FailureBehavior.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.0.0",

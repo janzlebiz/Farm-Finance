@@ -9,11 +9,52 @@ import {
 } from '../types/sync';
 import { adminDb } from './adminFirebase';
 
+/**
+ * Checks if two entity payloads are semantically identical (ignoring sync metadata fields)
+ */
+function arePayloadsIdentical(incomingPayload: any, existingServerRecord: any, entityId?: string): boolean {
+  if (!incomingPayload || !existingServerRecord) return false;
+  const metadataKeys = new Set(['sync_state', 'record_sync_version', 'last_synced_at', '_sync_version']);
+
+  const normA: Record<string, any> = { ...incomingPayload };
+  if (entityId && !normA.id) normA.id = entityId;
+
+  const normB: Record<string, any> = { ...existingServerRecord };
+
+  for (const k of metadataKeys) {
+    delete normA[k];
+    delete normB[k];
+  }
+
+  const keysA = Object.keys(normA).filter((k) => normA[k] !== undefined).sort();
+  const keysB = Object.keys(normB).filter((k) => normB[k] !== undefined).sort();
+
+  if (keysA.length !== keysB.length) return false;
+
+  for (let i = 0; i < keysA.length; i++) {
+    const key = keysA[i];
+    if (key !== keysB[i]) return false;
+    const valA = normA[key];
+    const valB = normB[key];
+
+    if (valA === valB) continue;
+    if ((valA === null || valA === undefined) && (valB === null || valB === undefined)) continue;
+
+    if (typeof valA === 'object' && typeof valB === 'object' && valA !== null && valB !== null) {
+      if (JSON.stringify(valA) !== JSON.stringify(valB)) return false;
+    } else if (valA !== valB) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export class ServerSyncService {
   /**
    * Process client push request with authoritative server validation,
    * optimistic concurrency control, void-wins semantics, version assignment,
-   * and atomic changelog recording in a single Firestore transaction.
+   * duplicate retry idempotency, and atomic changelog recording in a single Firestore transaction.
    *
    * The userId parameter is the verified, authenticated user identity.
    */
@@ -59,6 +100,22 @@ export class ServerSyncService {
         const existingRecord = existingSnap && existingSnap.exists ? existingSnap.data() : null;
 
         const serverVersion = existingRecord ? (existingRecord.record_sync_version || 1) : 0;
+
+        // IDEMPOTENCY CHECK:
+        // If the server record already contains this exact payload and void state,
+        // this is a safe duplicate/retry submission (e.g. unacknowledged network retry).
+        // Acknowledge as APPLIED without incrementing version or creating duplicate change-logs.
+        if (existingRecord && arePayloadsIdentical(item.payload, existingRecord, item.entityId)) {
+          results.push({
+            entityType: item.entityType,
+            entityId: item.entityId,
+            status: 'APPLIED',
+            newVersion: existingRecord.record_sync_version,
+            newCursor: currentCursor,
+            lastSyncedAt: existingRecord.last_synced_at || Date.now()
+          });
+          continue;
+        }
 
         // VOID-WINS SEMANTICS:
         // If server record is already VOID, active update mutations are rejected permanently
@@ -146,6 +203,7 @@ export class ServerSyncService {
    * Process client pull request:
    * - sinceCursor === 0: Full dataset bootstrap directly from authoritative Firestore business_data
    * - sinceCursor > 0: Incremental change log replay from Firestore _sync/change_log_*
+   * - sinceCursor > currentServerCursor: Automatic cursor recovery triggering full bootstrap
    *
    * The userId parameter is the verified, authenticated user identity.
    */
@@ -158,8 +216,14 @@ export class ServerSyncService {
     const metaDoc = await metaRef.get();
     const currentServerCursor = metaDoc.exists ? (metaDoc.data()?.current_cursor || 0) : 0;
 
+    // CURSOR RECOVERY:
+    // If client cursor is invalid (negative or strictly greater than server cursor),
+    // fall back to full bootstrap (sinceCursor = 0) so the client recovers seamlessly.
+    const isInvalidCursor = sinceCursor < 0 || sinceCursor > currentServerCursor;
+    const effectiveSinceCursor = isInvalidCursor ? 0 : sinceCursor;
+
     // 1. Bootstrap: Fetch entire user dataset
-    if (sinceCursor === 0) {
+    if (effectiveSinceCursor === 0) {
       const dataset: FullSyncDataset = {
         buyers: [],
         suppliers: [],
@@ -193,9 +257,9 @@ export class ServerSyncService {
 
     // 2. Incremental: Fetch change logs newer than sinceCursor
     const changes: SyncChangeLogEntry[] = [];
-    if (currentServerCursor > sinceCursor) {
+    if (currentServerCursor > effectiveSinceCursor) {
       const promises: Promise<FirebaseFirestore.DocumentSnapshot>[] = [];
-      for (let c = sinceCursor + 1; c <= currentServerCursor; c++) {
+      for (let c = effectiveSinceCursor + 1; c <= currentServerCursor; c++) {
         promises.push(adminDb.doc(`users/${userId}/_sync/change_log_${c}`).get());
       }
       const snaps = await Promise.all(promises);

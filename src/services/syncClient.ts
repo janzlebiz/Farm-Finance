@@ -51,45 +51,73 @@ export class SyncClient {
 
   /**
    * Dispatches push request to trusted server boundary (/api/sync/push)
+   * Includes 15-second request timeout and network resilience.
    */
-  static async push(request: SyncPushRequest): Promise<SyncPushResponse> {
+  static async push(request: SyncPushRequest, timeoutMs = 15000): Promise<SyncPushResponse> {
     const headers = await this.getAuthHeaders();
     const baseUrl = getSyncApiBaseUrl();
     const endpoint = `${baseUrl}/api/sync/push`;
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(request)
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(errBody.error || `Push sync failed with status ${res.status}`);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(request),
+        signal: controller.signal
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(errBody.error || `Push sync failed with HTTP status ${res.status}`);
+      }
+
+      return await res.json();
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error(`Push sync timed out after ${timeoutMs}ms. Server is unreachable.`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return await res.json();
   }
 
   /**
    * Dispatches pull request to trusted server boundary (/api/sync/pull)
+   * Includes 15-second request timeout and network resilience.
    */
-  static async pull(request: SyncPullRequest): Promise<SyncPullResponse> {
+  static async pull(request: SyncPullRequest, timeoutMs = 15000): Promise<SyncPullResponse> {
     const headers = await this.getAuthHeaders();
     const baseUrl = getSyncApiBaseUrl();
     const endpoint = `${baseUrl}/api/sync/pull`;
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(request)
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(errBody.error || `Pull sync failed with status ${res.status}`);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(request),
+        signal: controller.signal
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(errBody.error || `Pull sync failed with HTTP status ${res.status}`);
+      }
+
+      return await res.json();
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error(`Pull sync timed out after ${timeoutMs}ms. Server is unreachable.`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return await res.json();
   }
 }

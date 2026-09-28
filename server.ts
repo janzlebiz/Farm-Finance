@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ServerSyncService } from './src/server/syncService';
@@ -83,6 +84,20 @@ async function createServer() {
       appType: 'spa'
     });
     app.use(vite.middlewares);
+
+    // Fallback for HTML delivery in dev mode
+    app.use('*', async (req, res, next) => {
+      const url = req.originalUrl;
+      try {
+        const indexPath = path.resolve(__dirname, 'index.html');
+        let template = fs.readFileSync(indexPath, 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e: any) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
   } else {
     // Production: serve built static assets
     const distPath = path.resolve(__dirname, 'dist');

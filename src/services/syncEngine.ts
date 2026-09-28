@@ -91,7 +91,8 @@ export class SyncEngine {
   }
 
   /**
-   * Pushes all pending local changes to the trusted server sync boundary
+   * Pushes all pending local changes to the trusted server sync boundary.
+   * On failure or timeout, local data remains intact and in PENDING_UPLOAD state.
    */
   static async pushPendingChanges(userId: string): Promise<{
     appliedCount: number;
@@ -171,8 +172,8 @@ export class SyncEngine {
 
   /**
    * Pulls remote changes from trusted server boundary:
-   * - If cursor == 0, executes bootstrap sync merging initial cloud dataset
-   * - If cursor > 0, executes incremental sync replaying newer change logs
+   * - If cursor == 0 or isBootstrap is true, merges initial/recovered cloud dataset
+   * - If cursor > 0 and isBootstrap is false, replays sorted newer change logs
    */
   static async pullRemoteChanges(userId: string): Promise<{
     pulledChangesCount: number;
@@ -189,7 +190,7 @@ export class SyncEngine {
     let pulledChangesCount = 0;
 
     if (res.isBootstrap && res.dataset) {
-      // 1. Bootstrap: Merge full dataset
+      // 1. Bootstrap / Cursor Recovery: Merge full dataset
       const mergeCollection = (localList: any[], remoteList: any[]) => {
         for (const remote of remoteList) {
           const idx = localList.findIndex((i) => i.id === remote.id);
@@ -220,8 +221,9 @@ export class SyncEngine {
       mergeCollection(db.harvests, res.dataset.harvests);
       mergeCollection(db.auditLogs, res.dataset.audit_logs);
     } else if (res.changes && res.changes.length > 0) {
-      // 2. Incremental: Replay newer changes
-      for (const change of res.changes) {
+      // 2. Incremental: Sort by monotonic cursor ascending and replay
+      const sortedChanges = [...res.changes].sort((a, b) => a.cursor - b.cursor);
+      for (const change of sortedChanges) {
         const { entityType, record } = change;
         const applyIncremental = (localList: any[]) => {
           const idx = localList.findIndex((i) => i.id === record.id);
