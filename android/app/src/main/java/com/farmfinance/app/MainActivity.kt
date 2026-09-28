@@ -26,13 +26,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
-class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreHandler {
+class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreHandler, FarmFinanceNativeBridge.CsvExportHandler {
 
     private lateinit var webView: WebView
     private lateinit var database: FarmFinanceDatabase
     private lateinit var repository: FarmRepository
     private lateinit var keystoreManager: KeystoreManager
     private lateinit var nativeBridge: FarmFinanceNativeBridge
+    private var pendingCsvContent: String? = null
 
     private val exportDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -117,6 +118,49 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
         }
     }
 
+    private val exportCsvDocumentLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK && result.data?.data != null && pendingCsvContent != null) {
+            val uri: Uri = result.data!!.data!!
+            val csvToWrite = pendingCsvContent!!
+            pendingCsvContent = null
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        outputStream.write(csvToWrite.toByteArray(Charsets.UTF_8))
+                        outputStream.flush()
+                    }
+                    dispatchWebEvent(
+                        "farm-finance-csv-result",
+                        JSONObject().apply {
+                            put("success", true)
+                            put("message", "CSV file successfully exported.")
+                        }
+                    )
+                } catch (e: Exception) {
+                    dispatchWebEvent(
+                        "farm-finance-csv-result",
+                        JSONObject().apply {
+                            put("success", false)
+                            put("message", "Export failed: ${e.message ?: "Could not write CSV file."}")
+                        }
+                    )
+                }
+            }
+        } else {
+            pendingCsvContent = null
+            dispatchWebEvent(
+                "farm-finance-csv-result",
+                JSONObject().apply {
+                    put("success", false)
+                    put("cancelled", true)
+                    put("message", "CSV export was cancelled.")
+                }
+            )
+        }
+    }
+
     private fun dispatchWebEvent(eventName: String, payload: JSONObject) {
         if (::webView.isInitialized) {
             val js = "window.dispatchEvent(new CustomEvent('${eventName}', { detail: ${payload.toString()} }));"
@@ -148,6 +192,18 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
         }
     }
 
+    override fun launchExportCsv(suggestedFileName: String, csvContent: String) {
+        pendingCsvContent = csvContent
+        runOnUiThread {
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "text/csv"
+                putExtra(Intent.EXTRA_TITLE, suggestedFileName)
+            }
+            exportCsvDocumentLauncher.launch(intent)
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,6 +214,7 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
         keystoreManager = KeystoreManager(applicationContext)
         nativeBridge = FarmFinanceNativeBridge(repository, database, keystoreManager, applicationContext)
         nativeBridge.backupRestoreHandler = this
+        nativeBridge.csvExportHandler = this
 
         // Setup WebViewAssetLoader to securely serve local assets from https://appassets.androidplatform.net/
         val assetLoader = WebViewAssetLoader.Builder()

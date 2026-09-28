@@ -19,21 +19,23 @@ export const SaleModal: React.FC<SaleModalProps> = ({
   onSuccess,
   onBuyerAdded
 }) => {
-  const [availableBuyers, setAvailableBuyers] = useState<Buyer[]>(buyers);
+  const activeBuyers = buyers.filter((b) => b.status === 'ACTIVE');
+  const [availableBuyers, setAvailableBuyers] = useState<Buyer[]>(activeBuyers);
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [crop, setCrop] = useState<string>('Rice');
   const [quantityStr, setQuantityStr] = useState<string>('');
   const [unit, setUnit] = useState<string>('kg');
   const [unitPriceStr, setUnitPriceStr] = useState<string>('');
-  const [buyerId, setBuyerId] = useState<string>(buyers[0]?.id || '');
+  const [buyerId, setBuyerId] = useState<string>(activeBuyers[0]?.id || '');
   const [cycleId, setCycleId] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setAvailableBuyers(buyers);
-    if (!buyerId && buyers.length > 0) {
-      setBuyerId(buyers[0].id);
+    const active = buyers.filter((b) => b.status === 'ACTIVE');
+    setAvailableBuyers(active);
+    if (!buyerId && active.length > 0) {
+      setBuyerId(active[0].id);
     }
   }, [buyers]);
 

@@ -170,8 +170,29 @@ export const BackupModal: React.FC<BackupModalProps> = ({ onClose, onReload }) =
     onClose();
   };
 
-  const handleDownloadCsv = (dataset: any) => {
+  const handleDownloadCsv = async (dataset: any) => {
     const csv = StorageService.generateCsv(dataset);
+    if (StorageService.isNativeAndroid()) {
+      setIsProcessing(true);
+      try {
+        const res = await StorageService.exportNativeCsv(dataset, csv);
+        if (!res.cancelled) {
+          setRestoreStatus({
+            success: res.success,
+            message: res.message
+          });
+        }
+      } catch (err: any) {
+        setRestoreStatus({
+          success: false,
+          message: err.message || 'Export CSV failed.'
+        });
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

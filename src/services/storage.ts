@@ -1415,6 +1415,33 @@ export const StorageService = {
     });
   },
 
+  exportNativeCsv(dataset: string, csvContent: string): Promise<{ success: boolean; message: string; cancelled?: boolean }> {
+    return new Promise((resolve) => {
+      const bridge = getNativeBridge();
+      if (!bridge || typeof bridge.requestExportCsv !== 'function') {
+        resolve({ success: false, message: 'Native CSV export service is not available.' });
+        return;
+      }
+
+      const handler = (event: any) => {
+        window.removeEventListener('farm-finance-csv-result', handler);
+        resolve(event.detail || { success: false, message: 'No response received from CSV export service.' });
+      };
+
+      window.addEventListener('farm-finance-csv-result', handler);
+      try {
+        const launched = bridge.requestExportCsv(dataset, csvContent);
+        if (!launched) {
+          window.removeEventListener('farm-finance-csv-result', handler);
+          resolve({ success: false, message: 'Could not launch native CSV exporter.' });
+        }
+      } catch (e: any) {
+        window.removeEventListener('farm-finance-csv-result', handler);
+        resolve({ success: false, message: e.message || 'CSV export request failed.' });
+      }
+    });
+  },
+
   pickNativeBackupFile(): Promise<{ success: boolean; content?: string; cancelled?: boolean; message?: string }> {
     return new Promise((resolve) => {
       const bridge = getNativeBridge();

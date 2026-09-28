@@ -21,7 +21,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   onSuccess,
   onSupplierAdded
 }) => {
-  const [availableSuppliers, setAvailableSuppliers] = useState<Supplier[]>(suppliers);
+  const activeSuppliers = suppliers.filter((s) => s.status === 'ACTIVE');
+  const [availableSuppliers, setAvailableSuppliers] = useState<Supplier[]>(activeSuppliers);
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [category, setCategory] = useState<string>(categories[0]?.name || 'Labor & Harvesting Wages');
   const [incurredStr, setIncurredStr] = useState<string>('');
@@ -41,7 +42,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [newSupplierContact, setNewSupplierContact] = useState<string>('');
 
   useEffect(() => {
-    setAvailableSuppliers(suppliers);
+    setAvailableSuppliers(suppliers.filter((s) => s.status === 'ACTIVE'));
   }, [suppliers]);
 
   const handleCreateNewSupplier = () => {

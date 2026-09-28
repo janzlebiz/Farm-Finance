@@ -37,7 +37,12 @@ class FarmFinanceNativeBridge(
         fun launchRestoreBackup()
     }
 
+    interface CsvExportHandler {
+        fun launchExportCsv(suggestedFileName: String, csvContent: String)
+    }
+
     var backupRestoreHandler: BackupRestoreHandler? = null
+    var csvExportHandler: CsvExportHandler? = null
 
     @JavascriptInterface
     fun isAvailable(): Boolean = true
@@ -55,6 +60,15 @@ class FarmFinanceNativeBridge(
     fun requestRestoreBackup(): Boolean {
         val handler = backupRestoreHandler ?: return false
         handler.launchRestoreBackup()
+        return true
+    }
+
+    @JavascriptInterface
+    fun requestExportCsv(dataset: String, csvContent: String): Boolean {
+        val now = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val suggestedFileName = "farm-finance-$dataset-$now.csv"
+        val handler = csvExportHandler ?: return false
+        handler.launchExportCsv(suggestedFileName, csvContent)
         return true
     }
 

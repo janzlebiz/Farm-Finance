@@ -2384,6 +2384,29 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(retrieved?.status === 'ARCHIVED', 'Database must persist ARCHIVED status after confirmation');
     });
 
+    await executeTest('CSV Export', 'Generate CSV for all 7 authoritative datasets', () => {
+      StorageService.resetToCleanState();
+      const datasets = ['sales', 'payments', 'expenses', 'buyers', 'suppliers', 'harvests', 'cycles'] as const;
+      for (const ds of datasets) {
+        const csv = StorageService.generateCsv(ds);
+        assert(typeof csv === 'string', `CSV for ${ds} must be a string`);
+        assert(csv.length > 0, `CSV for ${ds} must not be empty`);
+      }
+    });
+
+    await executeTest('Buyer/Supplier Eligibility', 'Inactive buyers/suppliers are excluded from active selection while preserved', () => {
+      StorageService.resetToCleanState();
+      const activeBuyer = StorageService.createBuyer({ name: 'Active Buyer', contactNumber: '', address: '', notes: '', status: 'ACTIVE' });
+      const inactiveBuyer = StorageService.createBuyer({ name: 'Inactive Buyer', contactNumber: '', address: '', notes: '', status: 'INACTIVE' });
+
+      const allBuyers = StorageService.getBuyers();
+      const activeBuyers = allBuyers.filter((b) => b.status === 'ACTIVE');
+
+      assert(allBuyers.length === 2, 'Both buyers preserved in master list');
+      assert(activeBuyers.length === 1, 'Only 1 active buyer');
+      assert(activeBuyers[0].id === activeBuyer.id, 'Active buyer selected');
+    });
+
   } finally {
     // Restore original user database state
     StorageService.saveMemoryDatabase(originalDb);
