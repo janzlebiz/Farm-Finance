@@ -4,16 +4,41 @@ import {
   SyncPushRequest,
   SyncPullRequest,
   SyncPushResponse,
-  SyncPullResponse,
-  SyncChangeLogEntry,
-  FullSyncDataset
+  SyncPullResponse
 } from '../types/sync';
 import { StorageService } from './storage';
-import { ServerSyncService } from '../server/syncService';
+import { SyncClient } from './syncClient';
 
 const SYNC_CURSOR_STORAGE_KEY = 'farm_finance_last_sync_cursor';
 
+export type SyncDispatcher = {
+  push: (req: SyncPushRequest) => Promise<SyncPushResponse>;
+  pull: (req: SyncPullRequest) => Promise<SyncPullResponse>;
+};
+
 export class SyncEngine {
+  private static dispatcher: SyncDispatcher = {
+    push: (req) => SyncClient.push(req),
+    pull: (req) => SyncClient.pull(req)
+  };
+
+  /**
+   * Sets custom dispatcher (useful in test runners without HTTP socket)
+   */
+  static setDispatcher(dispatcher: SyncDispatcher): void {
+    this.dispatcher = dispatcher;
+  }
+
+  /**
+   * Resets to default HTTP client dispatcher
+   */
+  static resetDispatcher(): void {
+    this.dispatcher = {
+      push: (req) => SyncClient.push(req),
+      pull: (req) => SyncClient.pull(req)
+    };
+  }
+
   /**
    * Retrieves the locally persisted sync cursor
    */
@@ -66,7 +91,7 @@ export class SyncEngine {
   }
 
   /**
-   * Pushes all pending local changes to the trusted server sync layer
+   * Pushes all pending local changes to the trusted server sync boundary
    */
   static async pushPendingChanges(userId: string): Promise<{
     appliedCount: number;
@@ -89,8 +114,8 @@ export class SyncEngine {
       changes: pendingChanges
     };
 
-    // Invoke authoritative server sync
-    const res = await ServerSyncService.processPush(pushReq);
+    // Invoke trusted server boundary
+    const res = await this.dispatcher.push(pushReq);
     const db = StorageService.loadDatabase();
 
     let appliedCount = 0;
@@ -100,7 +125,7 @@ export class SyncEngine {
     for (const result of res.results) {
       const { entityType, entityId, status, newVersion, lastSyncedAt } = result;
 
-      // Find local item in working database
+      // Update metadata in local database authority
       const updateLocalRecord = (list: any[]) => {
         const item = list.find((i) => i.id === entityId);
         if (item) {
@@ -145,7 +170,7 @@ export class SyncEngine {
   }
 
   /**
-   * Pulls remote changes from server:
+   * Pulls remote changes from trusted server boundary:
    * - If cursor == 0, executes bootstrap sync merging initial cloud dataset
    * - If cursor > 0, executes incremental sync replaying newer change logs
    */
@@ -159,7 +184,7 @@ export class SyncEngine {
       sinceCursor
     };
 
-    const res = await ServerSyncService.processPull(pullReq);
+    const res = await this.dispatcher.pull(pullReq);
     const db = StorageService.loadDatabase();
     let pulledChangesCount = 0;
 
@@ -173,7 +198,7 @@ export class SyncEngine {
             pulledChangesCount++;
           } else {
             const local = localList[idx];
-            // If server is voided, void takes precedence (void-wins)
+            // Void-wins takes precedence
             if (remote.isVoided && !local.isVoided) {
               localList[idx] = { ...remote, sync_state: 'SYNCED' };
               pulledChangesCount++;

@@ -1,9 +1,9 @@
 import { ServerSyncService } from '../src/server/syncService';
 import { SyncEngine } from '../src/services/syncEngine';
 import { StorageService } from '../src/services/storage';
-import { SyncChangeItem, SyncPushRequest, SyncPullRequest } from '../src/types/sync';
+import { SyncPushRequest, SyncPullRequest } from '../src/types/sync';
 
-// In-memory mock storage for tests
+// In-memory mock storage for local working database in Node environment
 const mockLocalStorage: Record<string, string> = {};
 (global as any).localStorage = {
   getItem: (k: string) => mockLocalStorage[k] || null,
@@ -18,8 +18,17 @@ const mockLocalStorage: Record<string, string> = {};
 
 async function runSyncFoundationTests() {
   console.log('====================================================');
-  console.log('  RUNNING PHASE D — ITEM 2F SYNC FOUNDATION TESTS   ');
+  console.log('  RUNNING PHASE D — ITEM 2F TRUSTED SERVER TESTS    ');
   console.log('====================================================\n');
+
+  // Reset persistent server store for clean test run
+  ServerSyncService.resetServerStore();
+
+  // Configure SyncEngine dispatcher to route through ServerSyncService for unit/integration testing
+  SyncEngine.setDispatcher({
+    push: (req) => ServerSyncService.processPush(req),
+    pull: (req) => ServerSyncService.processPull(req)
+  });
 
   const results: { name: string; passed: boolean; error?: string }[] = [];
 
@@ -243,7 +252,7 @@ async function runSyncFoundationTests() {
 
     const pullRes = await ServerSyncService.processPull(pullReq);
     assert(pullRes.isBootstrap === true, 'Must return isBootstrap = true');
-    assert(pullRes.currentServerCursor >= 4, `Cursor must reflect all applied writes, got ${pullRes.currentServerCursor}`);
+    assert(pullRes.currentServerCursor >= 3, `Cursor must reflect all applied writes, got ${pullRes.currentServerCursor}`);
     assert(!!pullRes.dataset, 'Dataset must be returned');
     assert(pullRes.dataset.buyers.length >= 1, 'Buyers must be populated in bootstrap');
     assert(pullRes.dataset.sales.length >= 1, 'Sales must be populated in bootstrap');
@@ -253,7 +262,7 @@ async function runSyncFoundationTests() {
   // TEST 6: Incremental Cursor Sync (Pull sinceCursor = S)
   // --------------------------------------------------------------------------
   await test('Incremental Sync (sinceCursor = S): Replays only newer change-log entries', async () => {
-    const currentCursor = 3; // Pull changes after cursor 3
+    const currentCursor = 2; // Pull changes after cursor 2
     const pullReq: SyncPullRequest = {
       userId: testUserId,
       sinceCursor: currentCursor
@@ -268,11 +277,11 @@ async function runSyncFoundationTests() {
   // --------------------------------------------------------------------------
   // TEST 7: Client SyncEngine - End-to-End Push & Local Metadata Updates
   // --------------------------------------------------------------------------
-  await test('Client SyncEngine: Detects PENDING_UPLOAD, pushes to server, and updates local records to SYNCED', async () => {
+  await test('Client SyncEngine: Detects PENDING_UPLOAD, pushes to server boundary, and updates local records to SYNCED', async () => {
     StorageService.resetToCleanState();
     (global as any).localStorage.clear();
 
-    // Create local buyer and local expense
+    // Create local buyer
     const buyer = StorageService.createBuyer({
       name: 'Sync Test Buyer',
       contactNumber: '09191112233',
@@ -315,6 +324,60 @@ async function runSyncFoundationTests() {
     const conflictedBuyer = StorageService.getBuyers().find((b) => b.id === buyer.id);
     assert(conflictedBuyer?.sync_state === 'CONFLICT', 'Conflicted buyer must transition to CONFLICT');
     assert(conflictedBuyer?.name === 'Local Edit Pending Conflict', 'Local data must NOT be overwritten');
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST 9: Batch Atomicity - Atomic Transaction Multi-Record Commit
+  // --------------------------------------------------------------------------
+  await test('Batch Atomicity: Multi-record push commits all documents, changelogs, and cursors atomically', async () => {
+    const multiPushReq: SyncPushRequest = {
+      userId: testUserId,
+      changes: [
+        {
+          entityType: 'suppliers',
+          entityId: 'supp_301',
+          operation: 'UPSERT',
+          baseVersion: 0,
+          payload: {
+            id: 'supp_301',
+            name: 'Agri Supply Corp',
+            contactNumber: '09181234567',
+            address: 'Highway',
+            notes: 'Primary seed supplier',
+            createdDate: '2026-09-28',
+            status: 'ACTIVE'
+          }
+        },
+        {
+          entityType: 'expenses',
+          entityId: 'exp_401',
+          operation: 'UPSERT',
+          baseVersion: 0,
+          payload: {
+            id: 'exp_401',
+            date: '2026-09-28',
+            category: 'Fertilizer',
+            amountIncurredCentavos: 500000,
+            amountPaidCentavos: 500000,
+            description: 'Urea 50kg',
+            supplierId: 'supp_301',
+            isVoided: false,
+            createdAt: '2026-09-28T00:00:00Z',
+            updatedAt: '2026-09-28T00:00:00Z'
+          }
+        }
+      ]
+    };
+
+    const res = await ServerSyncService.processPush(multiPushReq);
+    assert(res.results.length === 2, 'Must apply both records');
+    assert(res.results[0].status === 'APPLIED' && res.results[1].status === 'APPLIED', 'Both must be APPLIED');
+    assert(res.results[1].newCursor! > res.results[0].newCursor!, 'Cursors must be strictly monotonic');
+
+    // Verify both are present in bootstrap pull
+    const pullRes = await ServerSyncService.processPull({ userId: testUserId, sinceCursor: 0 });
+    assert(pullRes.dataset!.suppliers.some((s) => s.id === 'supp_301'), 'Supplier must be persisted');
+    assert(pullRes.dataset!.expenses.some((e) => e.id === 'exp_401'), 'Expense must be persisted');
   });
 
   // --------------------------------------------------------------------------
