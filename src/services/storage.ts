@@ -790,10 +790,11 @@ export const StorageService = {
     return this.loadDatabase().buyers;
   },
 
-  createBuyer(data: Omit<Buyer, 'id' | 'createdDate'>): Buyer {
+  createBuyer(data: Partial<Buyer> & { name: string }): Buyer {
     const bridge = getNativeBridge();
     if (bridge) {
-      const resStr = bridge.createBuyer(JSON.stringify(data));
+      const payload = { status: 'ACTIVE', ...data };
+      const resStr = bridge.createBuyer(JSON.stringify(payload));
       const res = JSON.parse(resStr);
       if (res.success) {
         const db = this.loadDatabase();
@@ -805,10 +806,11 @@ export const StorageService = {
 
     const db = this.loadDatabase();
     const newBuyer: Buyer = {
+      status: data.status || 'ACTIVE',
       ...data,
       id: `buyer-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdDate: DateUtils.getTodayString()
-    };
+    } as Buyer;
     db.buyers.unshift(newBuyer);
     this.addAuditLog(db, 'BUYER', newBuyer.id, 'CREATE', `Added buyer ${newBuyer.name}`);
     this.saveMemoryDatabase(db);
@@ -857,10 +859,11 @@ export const StorageService = {
     return this.loadDatabase().suppliers;
   },
 
-  createSupplier(data: Omit<Supplier, 'id' | 'createdDate'>): Supplier {
+  createSupplier(data: Partial<Supplier> & { name: string }): Supplier {
     const bridge = getNativeBridge();
     if (bridge) {
-      const resStr = bridge.createSupplier(JSON.stringify(data));
+      const payload = { status: 'ACTIVE', ...data };
+      const resStr = bridge.createSupplier(JSON.stringify(payload));
       const res = JSON.parse(resStr);
       if (res.success) {
         const db = this.loadDatabase();
@@ -872,10 +875,11 @@ export const StorageService = {
 
     const db = this.loadDatabase();
     const newSupplier: Supplier = {
+      status: data.status || 'ACTIVE',
       ...data,
       id: `supp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdDate: DateUtils.getTodayString()
-    };
+    } as Supplier;
     db.suppliers.unshift(newSupplier);
     this.addAuditLog(db, 'SUPPLIER', newSupplier.id, 'CREATE', `Added supplier/payee ${newSupplier.name}`);
     this.saveMemoryDatabase(db);
@@ -941,7 +945,7 @@ export const StorageService = {
     return this.loadDatabase().cycles;
   },
 
-  createCycle(data: Omit<ProductionCycle, 'id' | 'createdAt' | 'updatedAt'>): ProductionCycle {
+  createCycle(data: Partial<ProductionCycle> & { crop: any; cycleName: string; startDate: string; farmField: string; area: number; areaUnit: string }): ProductionCycle {
     const VALID_STATUSES = ['PLANNED', 'ACTIVE', 'HARVESTED', 'COMPLETED', 'CANCELLED', 'ARCHIVED'];
 
     const cleanCrop = data.crop?.trim();

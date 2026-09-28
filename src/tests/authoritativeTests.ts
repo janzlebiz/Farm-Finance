@@ -2394,17 +2394,22 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       }
     });
 
-    await executeTest('Buyer/Supplier Eligibility', 'Inactive buyers/suppliers are excluded from active selection while preserved', () => {
+    await executeTest('Creation Lifecycle Defaults', 'New Buyers, Suppliers, and Production Cycles default to ACTIVE status', () => {
       StorageService.resetToCleanState();
-      const activeBuyer = StorageService.createBuyer({ name: 'Active Buyer', contactNumber: '', address: '', notes: '', status: 'ACTIVE' });
-      const inactiveBuyer = StorageService.createBuyer({ name: 'Inactive Buyer', contactNumber: '', address: '', notes: '', status: 'INACTIVE' });
+      const buyer = StorageService.createBuyer({ name: 'Default Buyer', contactNumber: '', address: '', notes: '' });
+      const supplier = StorageService.createSupplier({ name: 'Default Supplier', contactNumber: '', address: '', notes: '' });
+      const cycle = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Default Cycle',
+        startDate: '2026-01-01',
+        farmField: 'North',
+        area: 1.0,
+        areaUnit: 'hectares'
+      });
 
-      const allBuyers = StorageService.getBuyers();
-      const activeBuyers = allBuyers.filter((b) => b.status === 'ACTIVE');
-
-      assert(allBuyers.length === 2, 'Both buyers preserved in master list');
-      assert(activeBuyers.length === 1, 'Only 1 active buyer');
-      assert(activeBuyers[0].id === activeBuyer.id, 'Active buyer selected');
+      assert(buyer.status === 'ACTIVE', 'New buyer must default to ACTIVE');
+      assert(supplier.status === 'ACTIVE', 'New supplier must default to ACTIVE');
+      assert(cycle.status === 'ACTIVE', 'New production cycle must default to ACTIVE');
     });
 
   } finally {

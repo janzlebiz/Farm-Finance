@@ -178,11 +178,11 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
           crop: crop as any,
           cycleName: cycleName.trim(),
           startDate,
-          completionDate: status === 'COMPLETED' ? completionDate.trim() : undefined,
+          completionDate: undefined,
           farmField: farmField.trim() || 'Main Field',
           area: parsedArea,
           areaUnit,
-          status,
+          status: 'ACTIVE',
           notes: notes.trim() || undefined
         });
       }
@@ -760,17 +760,18 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Planting / Start Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Planting / Start Date *</label>
+                <input
+                  type="date"
+                  required
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              {editingCycle && (
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">Status</label>
                   <select
@@ -786,7 +787,7 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
                     <option value="ARCHIVED">ARCHIVED</option>
                   </select>
                 </div>
-              </div>
+              )}
 
               {/* Completion Date (Required when status is COMPLETED) */}
               {status === 'COMPLETED' && (

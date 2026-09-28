@@ -101,7 +101,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
             contactNumber: contact.trim(),
             address: address.trim(),
             notes: notes.trim(),
-            status
+            status: 'ACTIVE'
           });
         } else {
           StorageService.createSupplier({
@@ -109,7 +109,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
             contactNumber: contact.trim(),
             address: address.trim(),
             notes: notes.trim(),
-            status
+            status: 'ACTIVE'
           });
         }
       }
@@ -250,17 +250,19 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
                   className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-emerald-700"
                 />
               </div>
-              <div>
-                <label className="font-semibold text-slate-700 block mb-0.5">Status</label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
-                  className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-emerald-700"
-                >
-                  <option value="ACTIVE">ACTIVE</option>
-                  <option value="INACTIVE">INACTIVE</option>
-                </select>
-              </div>
+              {editingContact && (
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-0.5">Status</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
+                    className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-emerald-700"
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="INACTIVE">INACTIVE</option>
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-1">
