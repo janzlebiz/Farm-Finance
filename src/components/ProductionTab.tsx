@@ -419,6 +419,41 @@ export const ProductionTab: React.FC<ProductionTabProps> = ({
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden space-y-4 animate-in fade-in duration-150">
       
+      {/* Top Banner: Production KPIs */}
+      <div className="bg-linear-to-r from-stone-900 to-emerald-950 text-white p-5 rounded-2xl shadow-md shrink-0">
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-xs uppercase tracking-wider text-emerald-200 font-semibold">
+            Farm Production Overview
+          </div>
+          <div className="text-xs bg-emerald-900/80 text-emerald-100 px-2 py-0.5 rounded-md font-semibold">
+            {liveCycles.length} Active Cycles
+          </div>
+        </div>
+        <div className="text-3xl font-extrabold tracking-tight">
+          {harvests.reduce((acc, h) => acc + h.quantity, 0).toLocaleString()} kg <span className="text-sm font-normal text-emerald-200">Total Harvested</span>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mt-4 pt-3 border-t border-emerald-800/60 text-xs">
+          <div>
+            <span className="text-emerald-200 block text-[11px]">Total Cycles</span>
+            <span className="text-base font-bold text-white">
+              {cycles.length}
+            </span>
+          </div>
+          <div>
+            <span className="text-emerald-200 block text-[11px]">Active</span>
+            <span className="text-base font-bold text-emerald-400">
+              {liveCycles.length}
+            </span>
+          </div>
+          <div>
+            <span className="text-emerald-200 block text-[11px]">Completed / Closed</span>
+            <span className="text-base font-bold text-amber-300">
+              {closedCycles.length}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div>
