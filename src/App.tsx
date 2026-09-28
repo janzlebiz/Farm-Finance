@@ -3,6 +3,7 @@ import { StorageService } from './services/storage';
 import { Sale, Payment, Expense, ExpenseCategory, Buyer, Supplier, ProductionCycle, Harvest, AuditLog, FarmProfile } from './types';
 import { MoneyUtils } from './utils/money';
 import { DateUtils } from './utils/date';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 // Tab screens
 import { DashboardTab } from './components/DashboardTab';
@@ -24,6 +25,7 @@ import { FarmProfileModal } from './components/FarmProfileModal';
 import { InstallAppModal } from './components/InstallAppModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import { AuthModal } from './components/AuthModal';
 
 // Icons
 import {
@@ -37,10 +39,12 @@ import {
   Download,
   Users,
   History,
-  Building
+  Building,
+  ShieldCheck
 } from 'lucide-react';
 
-export default function App() {
+function AppContent() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<string>('dashboard');
 
   // Database records
@@ -66,8 +70,9 @@ export default function App() {
     remainingBalanceCentavos: number;
   } | null>(null);
 
-  // "More" drawers
+  // "More" drawers & Auth modal
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
   const [isBackupOpen, setIsBackupOpen] = useState<boolean>(false);
   const [isAuditOpen, setIsAuditOpen] = useState<boolean>(false);
@@ -161,6 +166,15 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setIsAuthModalOpen(true)}
+            className="p-2 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 transition flex items-center gap-1"
+            aria-label="Cloud Account"
+            title={user ? `Signed in as ${user.email}` : 'Sign In / Account'}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            {user && <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />}
+          </button>
           <button
             onClick={() => setIsMoreMenuOpen(true)}
             className="p-2 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 transition"
@@ -268,6 +282,13 @@ export default function App() {
       </nav>
 
       {/* ================= MODALS & DRAWERS ================= */}
+
+      {/* Cloud Account & Auth Modal */}
+      {isAuthModalOpen && (
+        <AuthModal
+          onClose={() => setIsAuthModalOpen(false)}
+        />
+      )}
 
       {/* New Sale Modal */}
       {isSaleModalOpen && (
@@ -387,6 +408,25 @@ export default function App() {
               <button
                 onClick={() => {
                   setIsMoreMenuOpen(false);
+                  setIsAuthModalOpen(true);
+                }}
+                className="w-full text-left p-3 rounded-xl hover:bg-slate-50 text-slate-800 font-semibold flex items-center justify-between transition border border-slate-200"
+              >
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                  <div className="flex flex-col">
+                    <span>Cloud Account & Login</span>
+                    <span className="text-[10px] text-slate-500 font-normal">
+                      {user ? `Signed in: ${user.email}` : 'Sign In / Create Account'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-slate-400 text-xs">→</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
                   setIsContactsOpen(true);
                 }}
                 className="w-full text-left p-3 rounded-xl hover:bg-slate-50 text-slate-800 font-semibold flex items-center justify-between transition border border-slate-200"
@@ -479,5 +519,13 @@ export default function App() {
       )}
 
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
