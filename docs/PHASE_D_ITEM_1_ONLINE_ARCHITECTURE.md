@@ -1,170 +1,263 @@
-# Phase D, Item 1: Online Architecture & Cloud Sync Foundation Document
+# Phase D, Item 1: Online Architecture & Cloud Sync Foundation Document (Corrected)
 
-This document defines the architecture, data contracts, security guidelines, and synchronization patterns for integrating cloud-backed synchronization and user accounts into the **Farm Finance App** without disrupting its existing offline-first Android/Room-based authority.
-
----
-
-## 1. Executive Architecture Summary
-
-The existing Farm Finance application operates with strict **Local-First / Offline Authority**:
-- **Web SPA Client**: Utilizes an authoritative in-memory state backed by Web Storage / LocalStorage APIs and local storage files.
-- **Android Native Application**: Relies on a native SQLite/Room database that acts as the local working copy and offline authority.
-
-### Recommended Cloud Backend Architecture: Google Firebase (Firestore + Auth)
-To seamlessly preserve local authority, we recommend Google Firebase as the cloud synchronization backend:
-1. **Authentication**: Firebase Authentication (supporting Email/Password and Google Sign-In) to establish unique user identities (`uid`).
-2. **Database**: Cloud Firestore (NoSQL, document-oriented, highly performant for direct client-to-cloud connections).
-3. **Data Isolation**: A clean sub-collection hierarchy where every write is guarded by rule-based per-user checks.
-4. **Offline Authority**: Firestore's built-in offline caching perfectly complements our Room model. The local database (Room/LocalStorage) continues to store the authoritative, immediately interactive state. Sync operates asynchronously in the background.
+This document outlines the architectural blueprints, schema mappings, security rules, and synchronization protocols for introducing user accounts and cloud synchronization to the **Farm Finance App**. It has been corrected to perfectly align with the current repository state and native Android Room configuration.
 
 ---
 
-## 2. The Synchronization Contract
+## 1. Executive Summary & Authority Model
 
-To maintain correct financial, lifecycle, and audit states, the synchronization contract dictates how local records and remote records coordinate.
+The fundamental design principle of the Farm Finance App is **Local-First Working Copy Authority**. 
 
-### Record Identity & Keying
-- **Universally Unique IDs**: All records are created locally with UUIDs (e.g., `cycle-xxxxx` or `buyer-xxxxx`). They remain globally unique, eliminating identity collisions during sync.
-- **Owner ID Association**: When synced, each record in the cloud is populated with a `userId` field to partition data.
-
-### Timestamps & Metadata
-To enable incremental, delta-based sync and conflict resolution, each table/collection must track the following metadata:
-- `createdAt` (ISO 8601 UTC String): Set when the record is created. NEVER modified.
-- `updatedAt` (ISO 8601 UTC String): Updated every time any field in the record changes locally.
-- `syncState` (Enum): `PENDING_SYNC` (modified locally, needs upload), `SYNCED` (mirrored in cloud), or `LOCAL_ONLY`.
-- `isVoided` (Boolean): Deletions are mapped as **soft-deletes/voids** to ensure references remain unbroken across multi-device configurations.
-
-### Sync State Machine & Lifecycle Rules
-```
-                 +-----------------+
-                 |  Local Create   |  (Set syncState = PENDING_SYNC)
-                 +--------+--------+
-                          |
-                          v
-                 +-----------------+
-                 |   Sync Upload   |  (If successful, set syncState = SYNCED)
-                 +--------+--------+
-                          |
-            +-------------+-------------+
-            |                           |
-            v                           v
-   +-----------------+         +------------------+
-   |   Local Edit    |         |   Remote Edit    |
-   | (syncState=     |         | (Incoming delta  |
-   |  PENDING_SYNC)  |         |  from cloud)     |
-   +--------+--------+         +--------+---------+
-            |                           |
-            +-------------+-------------+
-                          |
-                          v
-                 +-----------------+
-                 | Conflict Check  |  (If timestamps match, syncState = SYNCED)
-                 +-----------------+
-```
-
-### Conflict Resolution Strategy: Last-Write-Wins (LWW) with Semantic Preservation
-- **Resolution Rule**: If a record has changed both locally and in the cloud since the last sync boundary, the version with the most recent `updatedAt` timestamp wins.
-- **Exception for Financial Auditing**: Financial records (Sales, Payments, Expenses) are **immutable or soft-deleted/voided**. Modifying them generates an audit trail log, guaranteeing data consistency.
-
-### Retry Behavior
-- Sync operations queue locally when connection is lost.
-- Exponential backoff is applied for transient network failures.
-- Rate-limiting safeguards protect against battery and data exhaustion.
+### Local-First Authority Principle
+- **Authoritative Database**: The local SQLite database, managed via the **Android Room** framework, remains the sole working source of truth for the Android application.
+- **UI & Logic Path**: The user interface, financial calculators, and validation lifecycle layers interact exclusively with the local Room database. No reads or writes from the UI bypass Room.
+- **Firestore Role**: Cloud Firestore acts strictly as an asynchronous remote sync and backup target. It is **not** treated as a secondary source of truth, nor is the Firestore offline cache used as a direct query layer for the application UI.
+- **Sync Directionality**:
+  ```
+  [ Local UI / Calculations ]
+               │
+               ▼ (Reads / Writes)
+       [ Local Room DB ] (Sole Authority)
+         ▲           │
+         │           ▼
+     ┌───┴───────────┴───┐
+     │    Sync Engine    │  (Idempotent Delta Processor)
+     └───┬───────────┬───┘
+         ▲           │
+         │           ▼
+       [ Cloud Firestore ] (Remote Storage)
+  ```
 
 ---
 
-## 3. Entity & Proposed Cloud Schema Mapping
+## 2. Synchronization Architecture
 
-Below is the mapping from local SQLite/Room tables to Cloud Firestore documents inside `/users/{userId}/`:
+The Sync Engine is a background module responsible for moving data between Room and Cloud Firestore in an idempotent, reliable, and transaction-safe manner.
 
-| Entity | Type | Local Columns | Firestore Field & Types | Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| **Buyers** | Master Data | `id`, `name`, `contactNumber`, `address`, `notes`, `createdDate`, `status` | `name: string`, `contactNumber: string`, `address: string`, `notes: string`, `createdDate: string`, `status: 'ACTIVE' \| 'INACTIVE'` | Isolated per user. |
-| **Suppliers** | Master Data | `id`, `name`, `contactNumber`, `address`, `notes`, `createdDate`, `status` | `name: string`, `contactNumber: string`, `address: string`, `notes: string`, `createdDate: string`, `status: 'ACTIVE' \| 'INACTIVE'` | Isolated per user. |
-| **Production Cycles** | Transactional | `id`, `crop`, `cycleName`, `startDate`, `completionDate`, `farmField`, `area`, `areaUnit`, `expectedHarvestDate`, `notes`, `status`, `createdAt`, `updatedAt` | `crop: string`, `cycleName: string`, `startDate: string`, `completionDate: string?`, `farmField: string`, `area: number`, `areaUnit: string`, `expectedHarvestDate: string?`, `notes: string`, `status: string`, `createdAt: string`, `updatedAt: string` | Enforces `status: 'ACTIVE'` on creation. |
-| **Harvests** | Transactional | `id`, `cycleId`, `crop`, `date`, `quantity`, `unit`, `gradeQuality`, `notes`, `createdAt`, `updatedAt` | `cycleId: string`, `crop: string`, `date: string`, `quantity: number`, `unit: string`, `gradeQuality: string`, `notes: string`, `createdAt: string`, `updatedAt: string` | Must refer to a valid `cycleId`. |
-| **Sales** | Transactional | `id`, `date`, `crop`, `quantity`, `unit`, `unitPriceCentavos`, `grossAmountCentavos`, `buyerId`, `cycleId`, `notes`, `createdAt`, `updatedAt` | `date: string`, `crop: string`, `quantity: number`, `unit: string`, `unitPriceCentavos: number`, `grossAmountCentavos: number`, `buyerId: string`, `cycleId: string`, `notes: string`, `createdAt: string`, `updatedAt: string` | Linked to both `buyerId` and `cycleId`. |
-| **Payments** | Transactional | `id`, `saleId`, `date`, `amountPaidCentavos`, `notes`, `createdAt`, `updatedAt` | `saleId: string`, `date: string`, `amountPaidCentavos: number`, `notes: string`, `createdAt: string`, `updatedAt: string` | Must balance check against `saleId` total. |
-| **Expenses** | Transactional | `id`, `date`, `category`, `amountIncurredCentavos`, `amountPaidCentavos`, `description`, `crop`, `cycleId`, `supplierId`, `createdAt`, `updatedAt` | `date: string`, `category: string`, `amountIncurredCentavos: number`, `amountPaidCentavos: number`, `description: string`, `crop: string`, `cycleId: string?`, `supplierId: string?`, `createdAt: string`, `updatedAt: string` | Linked to `cycleId` & `supplierId`. |
-| **Expense Payments** | Transactional | `id`, `expenseId`, `date`, `amountPaidCentavos`, `notes`, `createdAt`, `updatedAt` | `expenseId: string`, `date: string`, `amountPaidCentavos: number`, `notes: string`, `createdAt: string`, `updatedAt: string` | Must map to existing `expenseId`. |
-| **Audit Logs** | Security / History | `id`, `entityType`, `entityId`, `action`, `details`, `timestamp` | `entityType: string`, `entityId: string`, `action: string`, `details: string`, `timestamp: string` | System-generated, immutable logging. |
+### Sync State Machine
+Each record in the local Room database tracks its state through the following sync states:
+- `'SYNCED'`: The local record matches the latest known state in Cloud Firestore.
+- `'PENDING_UPLOAD'`: The local record has been created or updated and must be sent to the cloud.
+- `'PENDING_DOWNLOAD'`: A remote change is available and must be applied to Room.
+- `'LOCAL_ONLY'`: Master data or config records that are not synced to the cloud.
 
----
+### Local Database Schema Migration (v4 → v5)
+The current Android codebase runs **Room Database Version 4**, with existing migrations `1→2`, `2→3`, and `3→4` preserved intact. To implement cloud synchronization, we propose a **new Migration 4→5**:
+- Alter existing Room tables to add a `sync_state` column (Text, defaulting to `'SYNCED'`).
+- Alter existing Room tables to add a `last_synced_at` column (Integer millisecond timestamp, defaulting to `0`).
 
-## 4. Minimum Firestore Security Rules for Strict Isolation
-
-To prevent cross-user data leaks, all documents must reside under a user-scoped collection hierarchy, restricted using strict **Firebase Security Rules**:
-
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    
-    // Strict match helper: ensures requester matches the user path being accessed
-    match /users/{userId}/{document=**} {
-      allow read, write, update, delete: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // Prevent global query reads and unstructured root writes
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}
-```
+### The Sync Process & Idempotency
+1. **Idempotent Uploads**:
+   - The Sync Engine queries the Room DB for records with `sync_state = 'PENDING_UPLOAD'`.
+   - Records are uploaded to Firestore using the local record's primary `id` as the Firestore document identifier (e.g., `/users/{userId}/sales/{saleId}`).
+   - **Idempotency Rule**: If a network failure occurs and the upload is retried, the overwrite on Firestore with the identical document key is safe and prevents any duplicate record creation.
+2. **Idempotent Downloads & Incremental Sync**:
+   - The Sync Engine maintains a local persistent `last_sync_checkpoint` (Long timestamp).
+   - **Incremental Query**: The engine queries Firestore for documents where the cloud `updatedAt` > local `last_sync_checkpoint`.
+   - **Writing to Room**: Received documents are applied to Room via upsert operations. If a record already exists, update invariants are applied. The local `last_sync_checkpoint` is updated upon success.
+3. **Initial Account/Device Sync**:
+   - Upon logging in on a new device, `last_sync_checkpoint` is set to `0`.
+   - A full fetch of all collections under `/users/{userId}/` is downloaded and inserted into Room.
+   - All successfully inserted records are marked locally as `'SYNCED'`.
+4. **Reconnect & Retry Queue**:
+   - When offline, writes persist safely in Room as `'PENDING_UPLOAD'`.
+   - The Sync Engine monitors network connectivity using Android's `ConnectivityManager` or periodic background tasks. Upon reconnect, the engine flushes the pending upload queue in sequential, transactional batches.
 
 ---
 
-## 5. Dependency Analysis & Cloud Sync Requirements
+## 3. Financial Conflict Handling & Ledgers
 
-To transition the current offline architecture to support Cloud Synchronization, the following specific dependencies and structures are required:
+Because Farm Finance strictly regulates ledger consistency and balance invariants, generic **Last-Write-Wins (LWW) is NOT applied to financial transactions**.
 
-### Required Android Dependencies (Native)
-1. **Firebase Core & Auth Android SDK**:
-   - `com.google.firebase:firebase-auth-ktx:22.x`
-2. **Cloud Firestore Android SDK**:
-   - `com.google.firebase:firebase-firestore-ktx:24.x`
-3. **Play Services (Google Sign-In)**:
-   - `com.google.android.gms:play-services-auth:20.x`
-4. **Android WorkManager**:
-   - `androidx.work:work-runtime-ktx:2.8.x` for scheduling periodic, network-aware background synchronization.
+### Immutable Ledger Principles (Sales, Payments, Expenses, Expense Payments)
+- **Void-and-Replace Integrity**:
+  - Financial records are functionally immutable once created. Edits are handled as a "Void-and-Replace" operation (setting `isVoided = true` and creating a new record if corrected).
+  - **Conflict Rule**: If a financial record exhibits conflicting updates on two devices (e.g., one device updates its metadata while another voids it), **the void status (`isVoided = true`) always wins**.
+  - **Double Payment Prevention**: If a Payment or Expense Payment is voided on one device, the cloud sync enforces that the void status propagates to all devices, preventing incorrect calculation of outstanding balances.
+- **Appending Audits**:
+  - All financial transitions append an immutable `AuditLog` entry. These logs are serialized sequentially based on the long millisecond `timestamp` and cannot be modified or reordered by sync conflicts.
 
-### Required Web / PWA Dependencies (Vite SPA)
-1. **Firebase Web SDK**:
-   - `firebase/app`, `firebase/auth`, `firebase/firestore` (version `10.x`)
-2. **Progressive Web App Background Sync**:
-   - Workbox Background Sync plugin (`workbox-background-sync`) for caching failed Firestore queries when offline and retrying them upon connectivity.
-
-### Room Database Migration Changes
-- To support background synchronization boundaries, each Room table must be updated to include sync metadata fields via a schema migration (v2):
-  - Add `sync_state` (`TEXT`, defaults to `'LOCAL_ONLY'`).
-  - Add `updated_at` (`TEXT`, current ISO 8601 UTC string).
-  - Add `is_voided` (`INTEGER` / boolean, defaults to `0` for soft deletes).
-
-### Native Bridge Changes
-- Create `login(credentialsJson)` and `logout()` bridge endpoints to delegate authentication flows to the native Android SDK.
-- Create a `syncNow()` callback trigger letting the Web SPA interface trigger and receive status updates on background synchronization batches.
-
-### Required Environment Variables / Secrets
-- `VITE_FIREBASE_API_KEY`: Client-safe key for accessing the web client.
-- `VITE_FIREBASE_AUTH_DOMAIN`: Firebase Auth domain configuration.
-- `VITE_FIREBASE_PROJECT_ID`: Target project ID.
-- `VITE_FIREBASE_APP_ID`: Application identifier.
+### Controlled Last-Write-Wins (Master Data & Production Cycles)
+- Master data entities (Buyers, Suppliers) and agricultural tracking entities (Production Cycles, Harvests) utilize **Controlled Last-Write-Wins** based on the record's `updatedAt` millisecond timestamp.
+- If both the local Room record and the cloud document were edited, the record with the higher numeric `updatedAt` timestamp overwrites the older state.
 
 ---
 
-## 6. Risks, Mitigation, & Open Decisions
+## 4. Current Entity & Cloud Schema Mapping
 
-1. **Clock Skew (LWW Risk)**:
-   - *Risk*: A client with an incorrect system clock could overwrite newer edits on other devices.
-   - *Mitigation*: Rely on Firestore server-side timestamps (`FieldValue.serverTimestamp()`) or compute the local time drift offset immediately upon authenticating.
-2. **Interrupted Background Sync**:
-   - *Risk*: Device shut-off or application termination during native sync execution could lead to partially updated records.
-   - *Mitigation*: Wrap local sync transaction blocks in SQLite `Database.beginTransaction()` calls to guarantee transactional atomicity.
-3. **PWA Storage Limits**:
-   - *Risk*: Browsers can clear IndexedDB/LocalStorage under extreme memory pressure.
-   - *Mitigation*: Request persistent storage permissions from PWA API browsers (`navigator.storage.persist()`).
+To maintain 100% database schema compatibility, the remote Firestore collection schema maps directly to the current Room entities and field names without inventing untyped placeholders.
+
+### 1. Buyers (Collection: `/users/{userId}/buyers/`)
+- **Primary Key**: `id` (String)
+- **Fields**:
+  - `name`: String
+  - `contactNumber`: String
+  - `address`: String
+  - `notes`: String
+  - `createdDate`: String (Format: YYYY-MM-DD)
+  - `isActive`: Boolean
+
+### 2. Suppliers (Collection: `/users/{userId}/suppliers/`)
+- **Primary Key**: `id` (String)
+- **Fields**:
+  - `name`: String
+  - `contactNumber`: String
+  - `address`: String
+  - `notes`: String
+  - `createdDate`: String (Format: YYYY-MM-DD)
+  - `isActive`: Boolean
+
+### 3. Sales (Collection: `/users/{userId}/sales/`)
+- **Primary Key**: `id` (String)
+- **Fields**:
+  - `date`: String (Format: YYYY-MM-DD)
+  - `crop`: String
+  - `quantity`: Double
+  - `unit`: String
+  - `unitPriceCentavos`: Long
+  - `grossAmountCentavos`: Long
+  - `buyerId`: String (Foreign key mapping to `BuyerEntity.id`)
+  - `buyerNameSnapshot`: String (Immutable snapshot)
+  - `notes`: String
+  - `cycleId`: String? (Optional link to Production Cycle)
+  - `harvestId`: String? (Optional link to Harvest)
+  - `isVoided`: Boolean
+  - `createdAt`: Long
+  - `updatedAt`: Long
+
+### 4. Payments (Collection: `/users/{userId}/payments/`)
+- **Primary Key**: `id` (String)
+- **Fields**:
+  - `saleId`: String (Foreign key mapping to `SaleEntity.id`)
+  - `buyerId`: String (Foreign key mapping to `BuyerEntity.id`)
+  - `date`: String (Format: YYYY-MM-DD)
+  - `amountCentavos`: Long
+  - `paymentMethod`: String
+  - `reference`: String
+  - `notes`: String
+  - `isVoided`: Boolean
+  - `createdAt`: Long
+
+### 5. Expenses (Collection: `/users/{userId}/expenses/`)
+- **Primary Key**: `id` (String)
+- **Fields**:
+  - `date`: String (Format: YYYY-MM-DD)
+  - `category`: String
+  - `amountIncurredCentavos`: Long
+  - `amountPaidCentavos`: Long
+  - `description`: String
+  - `crop`: String?
+  - `cycleId`: String?
+  - `supplierId`: String?
+  - `supplierNameSnapshot`: String?
+  - `paymentMethod`: String
+  - `reference`: String
+  - `notes`: String
+  - `isVoided`: Boolean
+  - `createdAt`: Long
+  - `updatedAt`: Long
+
+### 6. Expense Payments (Collection: `/users/{userId}/expense_payments/`)
+- **Primary Key**: `id` (String)
+- **Fields**:
+  - `expenseId`: String (Foreign key mapping to `ExpenseEntity.id`)
+  - `supplierId`: String?
+  - `date`: String (Format: YYYY-MM-DD)
+  - `amountCentavos`: Long
+  - `paymentMethod`: String
+  - `reference`: String
+  - `notes`: String
+  - `isVoided`: Boolean
+  - `createdAt`: Long
+
+### 7. Production Cycles (Collection: `/users/{userId}/production_cycles/`)
+- **Primary Key**: `id` (String)
+- **Fields**:
+  - `crop`: String
+  - `cycleName`: String
+  - `startDate`: String (Format: YYYY-MM-DD)
+  - `completionDate`: String?
+  - `expectedHarvestDate`: String?
+  - `actualHarvestDate`: String?
+  - `farmField`: String
+  - `area`: Double
+  - `areaUnit`: String
+  - `status`: String
+  - `notes`: String
+  - `createdAt`: Long
+  - `updatedAt`: Long
+
+### 8. Harvests (Collection: `/users/{userId}/harvests/`)
+- **Primary Key**: `id` (String)
+- **Fields**:
+  - `cycleId`: String (Foreign key mapping to `ProductionCycleEntity.id`)
+  - `crop`: String
+  - `date`: String
+  - `quantity`: Double
+  - `unit`: String
+  - `gradeQuality`: String
+  - `sellingPriceCentavos`: Long?
+  - `buyerId`: String?
+  - `notes`: String
+  - `createdAt`: Long
+
+### 9. Audit Logs (Collection: `/users/{userId}/audit_logs/`)
+- **Primary Key**: `id` (String)
+- **Fields**:
+  - `timestamp`: Long
+  - `entityType`: String
+  - `entityId`: String
+  - `eventType`: String
+  - `summary`: String
+  - `metadataJson`: String
+  - `appVersion`: String
 
 ---
 
-**End of Architecture Document.**
+## 5. Progressive Web App (PWA) / Web Client Architecture
+
+While the Android application coordinates sync via Room and the native Sync Engine, the web-based PWA operates in an independent client context:
+- **Web Local Authority**: The Web client utilizes its existing storage model (in-memory, LocalStorage, and JSON imports/exports) as its local offline authority.
+- **Separate Web Sync Engine**: On Web, a custom JavaScript Sync Engine synchronizes the local working state with the corresponding `/users/{userId}/` Firestore collections.
+- **Custom Synchronization Mechanism**: Rather than relying on rigid browser backgrounds or generic Workbox modules (which lack transactional context), the PWA utilizes its own application-level sync engine to coordinate clean document updates and parse local JSON state transitions.
+
+---
+
+## 6. Access Control & Strict Security Isolation
+
+1. **Separation of Concerns (Auth ID vs. Local IDs)**:
+   - The user authentication identifier (`uid`), generated securely by Firebase Authentication, is strictly isolated from local entity primary keys (`id`).
+   - The authentication `uid` acts exclusively as the root partition parameter `/users/{uid}/` to prevent cross-account visibility.
+2. **Untrusted Client Fields**:
+   - Client-side data fields containing `userId` are **not** trusted by the backend. Firestore Security Rules enforce document access purely by validating the cryptographic token's `request.auth.uid`.
+3. **Strict Security Rules**:
+   ```javascript
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       
+       // Force strict authenticated ownership check at the path parameter level
+       match /users/{userId}/{collectionName}/{documentId} {
+         allow read, write: if request.auth != null && request.auth.uid == userId;
+       }
+       
+       // Global default deny
+       match /{document=**} {
+         allow read, write: if false;
+       }
+     }
+   }
+   ```
+
+---
+
+## 7. Implementation Boundary & Non-Functional Design
+
+### Out of Scope for Phase D, Item 1
+To preserve current app integrity:
+- **No dependencies**: No Firebase, Auth, or sync-related packages are added to `package.json` or `build.gradle`.
+- **No schema changes applied**: The local SQLite/Room schema remains strictly at Version 4.
+- **No code execution changes**: No bridge changes, auth triggers, or sync engines are executed.
+
+---
+**End of Corrected Architecture Document.**
