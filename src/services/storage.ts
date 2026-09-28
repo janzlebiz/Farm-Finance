@@ -967,7 +967,7 @@ export const StorageService = {
     const cleanAreaUnit = data.areaUnit?.trim();
     if (!cleanAreaUnit) throw new Error('Area unit cannot be empty');
 
-    const cleanStatus = (data.status || 'ACTIVE').trim().toUpperCase() as any;
+    const cleanStatus: any = 'ACTIVE';
     if (!VALID_STATUSES.includes(cleanStatus)) {
       throw new Error(`Invalid cycle status: ${data.status}. Must be one of: ${VALID_STATUSES.join(', ')}`);
     }

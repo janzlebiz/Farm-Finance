@@ -1590,36 +1590,44 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
 
     await executeTest('Integrity', 'Harvest Eligibility: Rejects logging harvest on COMPLETED, CANCELLED, and ARCHIVED cycles', () => {
       StorageService.resetToCleanState();
-      const completedCycle = StorageService.createCycle({
+      const completedCycleRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Completed Season',
         startDate: '2026-05-01',
-        completionDate: '2026-09-15',
         farmField: 'Field A',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'COMPLETED'
+        areaUnit: 'ha'
+      });
+      const completedCycle = StorageService.updateCycle(completedCycleRaw.id, {
+        status: 'COMPLETED',
+        completionDate: '2026-09-15'
       });
 
-      const cancelledCycle = StorageService.createCycle({
+      const cancelledCycleRaw = StorageService.createCycle({
         crop: 'Copra',
         cycleName: 'Cancelled Season',
         startDate: '2026-05-01',
         farmField: 'Field B',
         area: 1.0,
-        areaUnit: 'ha',
+        areaUnit: 'ha'
+      });
+      const cancelledCycle = StorageService.updateCycle(cancelledCycleRaw.id, {
         status: 'CANCELLED'
       });
 
-      const archivedCycle = StorageService.createCycle({
+      const archivedCycleRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Archived Season',
         startDate: '2026-05-01',
         farmField: 'Field C',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'ARCHIVED'
+        areaUnit: 'ha'
       });
+      const completedForArch = StorageService.updateCycle(archivedCycleRaw.id, {
+        status: 'COMPLETED',
+        completionDate: '2026-09-15'
+      });
+      const archivedCycle = StorageService.archiveCycle(completedForArch.id);
 
       // 1. Attempt harvest on COMPLETED cycle
       let threw = false;
@@ -1977,15 +1985,15 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       StorageService.resetToCleanState();
       
       // 1. Create a planned cycle
-      const plannedCycle = StorageService.createCycle({
+      const plannedCycleRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Planned Cycle',
         startDate: '2026-05-01',
         farmField: 'Field A',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'PLANNED'
+        areaUnit: 'ha'
       });
+      const plannedCycle = StorageService.updateCycle(plannedCycleRaw.id, { status: 'PLANNED' });
       
       // Attempt to archive planned cycle directly -> REJECT
       let threw = false;
@@ -2004,8 +2012,7 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
         startDate: '2026-05-01',
         farmField: 'Field B',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'ACTIVE'
+        areaUnit: 'ha'
       });
       
       // Attempt to archive active cycle directly -> REJECT
@@ -2019,15 +2026,15 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(threw, 'Must throw when archiving active cycle');
 
       // 2b. Create a harvested cycle
-      const harvestedCycle = StorageService.createCycle({
+      const harvestedCycleRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Harvested Cycle',
         startDate: '2026-05-01',
         farmField: 'Field E',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'HARVESTED'
+        areaUnit: 'ha'
       });
+      const harvestedCycle = StorageService.updateCycle(harvestedCycleRaw.id, { status: 'HARVESTED' });
       
       // Attempt to archive harvested cycle directly -> REJECT
       threw = false;
@@ -2195,16 +2202,17 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
         startDate: '2026-06-01',
         farmField: 'Field 1',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'ACTIVE'
+        areaUnit: 'ha'
       });
-      const riceClosed = StorageService.createCycle({
+      const riceClosedRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Rice Completed',
         startDate: '2026-06-01',
         farmField: 'Field 2',
         area: 1.0,
-        areaUnit: 'ha',
+        areaUnit: 'ha'
+      });
+      const riceClosed = StorageService.updateCycle(riceClosedRaw.id, {
         status: 'COMPLETED',
         completionDate: '2026-08-30'
       });
@@ -2214,8 +2222,7 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
         startDate: '2026-06-01',
         farmField: 'Field 3',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'ACTIVE'
+        areaUnit: 'ha'
       });
 
       const harvestCrop = 'Rice';
@@ -2237,62 +2244,70 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
     await executeTest('Integrity', 'SaleModal cycle eligibility: includes PLANNED, ACTIVE, HARVESTED, COMPLETED and excludes CANCELLED, ARCHIVED', () => {
       StorageService.resetToCleanState();
 
-      const planned = StorageService.createCycle({
+      const plannedRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Planned',
         startDate: '2026-06-01',
         farmField: 'F1',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'PLANNED'
+        areaUnit: 'ha'
       });
+      const planned = StorageService.updateCycle(plannedRaw.id, { status: 'PLANNED' });
+
       const active = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Active',
         startDate: '2026-06-01',
         farmField: 'F2',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'ACTIVE'
+        areaUnit: 'ha'
       });
-      const harvested = StorageService.createCycle({
+
+      const harvestedRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Harvested',
         startDate: '2026-06-01',
         farmField: 'F3',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'HARVESTED'
+        areaUnit: 'ha'
       });
-      const completed = StorageService.createCycle({
+      const harvested = StorageService.updateCycle(harvestedRaw.id, { status: 'HARVESTED' });
+
+      const completedRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Completed',
         startDate: '2026-06-01',
         farmField: 'F4',
         area: 1.0,
-        areaUnit: 'ha',
+        areaUnit: 'ha'
+      });
+      const completed = StorageService.updateCycle(completedRaw.id, {
         status: 'COMPLETED',
         completionDate: '2026-08-30'
       });
-      const completedToArchive = StorageService.createCycle({
+
+      const completedToArchiveRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Completed To Archive',
         startDate: '2026-06-01',
         farmField: 'F6',
         area: 1.0,
-        areaUnit: 'ha',
+        areaUnit: 'ha'
+      });
+      const completedToArchive = StorageService.updateCycle(completedToArchiveRaw.id, {
         status: 'COMPLETED',
         completionDate: '2026-08-30'
       });
-      const cancelled = StorageService.createCycle({
+
+      const cancelledRaw = StorageService.createCycle({
         crop: 'Rice',
         cycleName: 'Cancelled',
         startDate: '2026-06-01',
         farmField: 'F5',
         area: 1.0,
-        areaUnit: 'ha',
-        status: 'CANCELLED'
+        areaUnit: 'ha'
       });
+      const cancelled = StorageService.updateCycle(cancelledRaw.id, { status: 'CANCELLED' });
       const archived = StorageService.archiveCycle(completedToArchive.id);
 
       const allCycles = StorageService.getCycles();
@@ -2435,6 +2450,17 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(buyer.status === 'ACTIVE', 'New buyer must default to ACTIVE');
       assert(supplier.status === 'ACTIVE', 'New supplier must default to ACTIVE');
       assert(cycle.status === 'ACTIVE', 'New production cycle must default to ACTIVE');
+
+      const plannedCycleAttempt = StorageService.createCycle({
+        crop: 'Rice',
+        cycleName: 'Planned Attempt Cycle',
+        startDate: '2026-02-01',
+        farmField: 'South',
+        area: 2.0,
+        areaUnit: 'hectares',
+        status: 'PLANNED' as any
+      });
+      assert(plannedCycleAttempt.status === 'ACTIVE', 'Caller-provided status (PLANNED) must be overridden to ACTIVE on creation');
     });
 
   } finally {
