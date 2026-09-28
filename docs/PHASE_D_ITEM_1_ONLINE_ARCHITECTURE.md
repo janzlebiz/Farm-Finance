@@ -39,29 +39,34 @@ Each record in the local Room database tracks its state through the following sy
 - `'SYNCED'`: The local record matches the latest known state in Cloud Firestore.
 - `'PENDING_UPLOAD'`: The local record has been created or updated and must be sent to the cloud.
 - `'PENDING_DOWNLOAD'`: A remote change is available and must be applied to Room.
-- `'LOCAL_ONLY'`: Master data or config records that are not synced to the cloud.
+- `'LOCAL_ONLY'`: Applied strictly to explicit device-local records/configurations (such as temporary application settings, onboarding cache, or dev preferences) that are intentionally excluded from cloud sync. Core business tables are synchronized by default.
 
 ### Local Database Schema Migration (v4 → v5)
 The current Android codebase runs **Room Database Version 4**, with existing migrations `1→2`, `2→3`, and `3→4` preserved intact. To implement cloud synchronization, we propose a **new Migration 4→5**:
 - Alter existing Room tables to add a `sync_state` column (Text, defaulting to `'SYNCED'`).
-- Alter existing Room tables to add a `sync_version` column (Integer version counter, defaulting to `1`).
+- Alter existing Room tables to add a `record_sync_version` column (Integer version counter, defaulting to `1` for conflict tracking).
 - Alter existing Room tables to add a `last_synced_at` column (Integer millisecond timestamp, defaulting to `0`).
 
-### Sync Checkpoints & Incremental Sync (Sync Cursor Model)
-Because current domain schemas lack a universal `updatedAt` field (Buyers, Suppliers, Payments, Expense Payments, and Harvests do not have `updatedAt` in their schema; Audit Logs use `timestamp`), we do **not** rely on existing domain fields for sync boundaries. Instead, sync is managed as follows:
+### Cursor & Version Separation (Sync Cursor Model)
+Because current domain schemas lack a universal `updatedAt` field (Buyers, Suppliers, Payments, Expense Payments, and Harvests do not have `updatedAt` in their schema; Audit Logs use `timestamp`), we do **not** rely on existing domain fields for sync boundaries. Instead, we define two distinct, decoupled concepts:
 
-1. **Sync Cursor / Version**: The Sync Engine maintains an internal `last_sync_version` cursor / checkpoint for each collection.
-2. **Sync-Layer Metadata**: When records are written or updated, the local sync layer increments the local `sync_version` for that record.
-3. **Incremental Sync**: The Sync Engine queries Firestore for records in a collection where the sync-layer `sync_version` > local `last_sync_version` checkpoint.
-4. **Idempotent Uploads**:
+1. **`record_sync_version` (Conflict Resolution Parameter)**:
+   - This is a per-record version integer saved in the local table row via the Migration 4→5.
+   - It is used strictly for **local-vs-remote conflict detection** and controlled conflict resolution during sync processes.
+   - **Crucially, `record_sync_version` is NOT the incremental-sync cursor.**
+2. **`change_cursor` (Global Sync Sequence Checkpoint)**:
+   - This is a monotonically increasing, collection/account-level sequence string or server timestamp generated dynamically by Firestore upon any document insert/write.
+   - The change cursor provides deterministic global ordering of all mutations and does not rely on incrementing record-level versions independently.
+   - The Sync Engine persists a local `last_sync_cursor` checkpoint. During an incremental sync cycle, the Sync Engine queries Firestore for any documents with `change_cursor` > `last_sync_cursor`.
+3. **Idempotent Uploads**:
    - The Sync Engine queries the Room DB for records with `sync_state = 'PENDING_UPLOAD'`.
    - Records are uploaded to Firestore using the local record's primary `id` as the Firestore document identifier (e.g., `/users/{userId}/sales/{saleId}`).
    - **Idempotency Rule**: If a network failure occurs and the upload is retried, the overwrite on Firestore with the identical document key is safe and prevents any duplicate record creation.
-5. **Initial Account/Device Sync**:
-   - Upon logging in on a new device, the local checkpoint/version cursor is initialized to `0`.
+4. **Initial Account/Device Sync**:
+   - Upon logging in on a new device, the local `last_sync_cursor` checkpoint is initialized to `0` or null.
    - A full fetch of all collections under `/users/{userId}/` is downloaded and inserted into Room.
    - All successfully inserted records are marked locally as `'SYNCED'`.
-6. **Reconnect & Retry Queue**:
+5. **Reconnect & Retry Queue**:
    - When offline, writes persist safely in Room as `'PENDING_UPLOAD'`.
    - The Sync Engine monitors network connectivity using Android's `ConnectivityManager` or periodic background tasks. Upon reconnect, the engine flushes the pending upload queue in sequential, transactional batches.
 
@@ -79,9 +84,9 @@ Because the current domain models lack an `updatedAt` field on several entities 
   - **Void Propagation**: Void status propagates across devices to prevent calculation mismatch of outstanding balances or double payments.
 
 ### Controlled Conflict Resolution (Master Data & Production Cycles)
-- **Master Data (Buyers, Suppliers, Harvests)**: These records utilize **Controlled Version-Based Conflict Resolution** managed via the sync-layer `sync_version` column.
-- **Production Cycles**: Uses `sync_version` tracking or `updatedAt` (which exists on Production Cycles) for conflict resolution.
-- If both local Room records and cloud documents were edited, the record with the higher numeric `sync_version` (or timestamp where available) wins.
+- **Master Data (Buyers, Suppliers, Harvests)**: These records utilize **Controlled Version-Based Conflict Resolution** managed via the sync-layer `record_sync_version` column.
+- **Production Cycles**: Uses `record_sync_version` tracking or `updatedAt` (which exists on Production Cycles) for conflict resolution.
+- If both local Room records and cloud documents were edited, the record with the higher numeric `record_sync_version` (or timestamp where available) wins.
 
 ### Audit Log Integrity
 - **Append-Only Behavior**: Audit logs are strictly append-only at the **application and sync-engine integrity layers**. 
