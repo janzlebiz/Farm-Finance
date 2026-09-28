@@ -1,3 +1,7 @@
+import { SyncState, SyncMetadata } from './sync';
+
+export * from './sync';
+
 export type CropType = 'Rice' | 'Copra' | string;
 
 export type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'VOIDED';
@@ -6,7 +10,7 @@ export type PaymentMethod = 'CASH' | 'GCASH' | 'BANK_TRANSFER' | 'CHECK' | 'OTHE
 
 export type CycleStatus = 'PLANNED' | 'ACTIVE' | 'HARVESTED' | 'COMPLETED' | 'CANCELLED' | 'ARCHIVED';
 
-export interface Buyer {
+export interface Buyer extends SyncMetadata {
   id: string;
   name: string;
   contactNumber: string;
@@ -16,7 +20,7 @@ export interface Buyer {
   status: 'ACTIVE' | 'INACTIVE';
 }
 
-export interface Supplier {
+export interface Supplier extends SyncMetadata {
   id: string;
   name: string;
   contactNumber: string;
@@ -26,7 +30,7 @@ export interface Supplier {
   status: 'ACTIVE' | 'INACTIVE';
 }
 
-export interface Sale {
+export interface Sale extends SyncMetadata {
   id: string;
   date: string; // YYYY-MM-DD
   crop: CropType;
@@ -44,7 +48,7 @@ export interface Sale {
   updatedAt: string;
 }
 
-export interface Payment {
+export interface Payment extends SyncMetadata {
   id: string;
   saleId: string;
   buyerId: string;
@@ -63,7 +67,7 @@ export interface ExpenseCategory {
   isDefault: boolean;
 }
 
-export interface Expense {
+export interface Expense extends SyncMetadata {
   id: string;
   date: string; // YYYY-MM-DD
   category: string;
@@ -82,7 +86,7 @@ export interface Expense {
   updatedAt: string;
 }
 
-export interface ExpensePayment {
+export interface ExpensePayment extends SyncMetadata {
   id: string;
   expenseId: string;
   supplierId?: string;
@@ -95,7 +99,7 @@ export interface ExpensePayment {
   createdAt: string;
 }
 
-export interface ProductionCycle {
+export interface ProductionCycle extends SyncMetadata {
   id: string;
   crop: CropType;
   cycleName: string; // e.g. "Rice — Wet Season 2026"
@@ -112,7 +116,7 @@ export interface ProductionCycle {
   updatedAt: string;
 }
 
-export interface Harvest {
+export interface Harvest extends SyncMetadata {
   id: string;
   cycleId: string;
   crop: CropType;
@@ -126,7 +130,7 @@ export interface Harvest {
   createdAt: string;
 }
 
-export interface AuditLog {
+export interface AuditLog extends SyncMetadata {
   id: string;
   timestamp: string;
   entityType: 'SALE' | 'PAYMENT' | 'EXPENSE' | 'BUYER' | 'SUPPLIER' | 'CYCLE' | 'HARVEST' | 'BACKUP';

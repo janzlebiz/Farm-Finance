@@ -10,7 +10,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "tsx scripts/runTests.ts",
-    "test:security": "tsx scripts/testSecurityRules.ts"
+    "test:security": "tsx scripts/testSecurityRules.ts",
+    "test:sync": "tsx scripts/testSyncFoundation.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.0.0",
