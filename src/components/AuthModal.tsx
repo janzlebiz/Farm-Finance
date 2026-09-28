@@ -79,17 +79,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="bg-emerald-800 text-white px-5 py-4 flex items-center justify-between">
+        <div className="bg-emerald-800 text-white px-5 py-4 flex items-center justify-between rounded-t-2xl">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-emerald-700/80">
               <ShieldCheck className="w-5 h-5 text-emerald-200" />
             </div>
             <div>
-              <h2 className="text-base font-bold">Cloud Account & Authentication</h2>
-              <p className="text-[11px] text-emerald-200">Phase D · Secure User Session</p>
+              <h2 className="text-base font-bold">Cloud Account & Identity</h2>
+              <p className="text-[11px] text-emerald-200">Phase D · Secure User Profile Foundation</p>
             </div>
           </div>
           <button
@@ -130,33 +130,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
                     Online
                   </span>
                 </div>
-                <div className="space-y-1 text-xs text-slate-700 pt-1">
+                <div className="space-y-1.5 text-xs text-slate-700 pt-1">
                   <div className="flex items-center justify-between border-b border-emerald-100/80 pb-1">
                     <span className="text-slate-500">Email:</span>
                     <span className="font-semibold text-slate-900">{user.email || 'Anonymous'}</span>
                   </div>
                   <div className="flex items-center justify-between border-b border-emerald-100/80 pb-1">
-                    <span className="text-slate-500">User ID:</span>
-                    <span className="font-mono text-[10px] text-slate-600 truncate max-w-[200px]" title={user.uid}>
+                    <span className="text-slate-500">User UID:</span>
+                    <span className="font-mono text-[10px] text-slate-600 truncate max-w-[190px]" title={user.uid}>
                       {user.uid}
                     </span>
                   </div>
                   <div className="flex items-center justify-between pt-0.5">
-                    <span className="text-slate-500">Provider:</span>
-                    <span className="text-slate-600">Email & Password</span>
+                    <span className="text-slate-500">Firestore Profile:</span>
+                    <span className="font-mono text-[10px] text-emerald-800 font-medium">/users/{user.uid}</span>
                   </div>
                 </div>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
-                <p className="font-semibold text-slate-800">🔒 Authentication Foundation</p>
-                <p>Your session is securely managed and persisted. Database records remain local-first until sync is enabled in later steps.</p>
+                <p className="font-semibold text-slate-800">🔒 Security & User Isolation</p>
+                <p>Security rules restrict Firestore access strictly to your own user document. All other users, collections, and internal sync paths are strictly denied.</p>
               </div>
 
               <button
                 onClick={handleSignOut}
                 disabled={isLoading}
-                className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition"
+                className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
               >
                 {isLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -176,7 +176,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
                 <button
                   type="button"
                   onClick={() => handleSwitchMode('signin')}
-                  className={`py-2 text-xs font-bold rounded-lg transition ${
+                  className={`py-2 text-xs font-bold rounded-lg transition cursor-pointer ${
                     mode === 'signin'
                       ? 'bg-white text-emerald-800 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
@@ -187,7 +187,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
                 <button
                   type="button"
                   onClick={() => handleSwitchMode('register')}
-                  className={`py-2 text-xs font-bold rounded-lg transition ${
+                  className={`py-2 text-xs font-bold rounded-lg transition cursor-pointer ${
                     mode === 'register'
                       ? 'bg-white text-emerald-800 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
@@ -251,7 +251,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full mt-2 py-2.5 px-4 bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition"
+                  className="w-full mt-2 py-2.5 px-4 bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
                 >
                   {isLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -270,17 +270,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
               </form>
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
-                <p className="font-semibold text-slate-700">🌱 Offline & Local-First</p>
-                <p>You can use Farm Finance completely offline. Signing in provisions your cloud identity for upcoming multi-device backup and synchronization.</p>
+                <p className="font-semibold text-slate-700">🌱 Local-First Architecture</p>
+                <p>Signing in sets up your cloud identity document at <code className="font-mono text-emerald-800 font-bold">/users/&#123;uid&#125;</code>. All accounting operations remain offline and local.</p>
               </div>
             </div>
           )}
         </div>
 
-        <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex justify-end">
+        <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex justify-end rounded-b-2xl">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition"
+            className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
           >
             Close
           </button>
