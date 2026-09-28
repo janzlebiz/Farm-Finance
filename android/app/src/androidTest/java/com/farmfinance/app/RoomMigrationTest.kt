@@ -367,31 +367,31 @@ class RoomMigrationTest {
         )
         db.execSQL(
             "INSERT INTO production_cycles (id, crop, cycleName, startDate, farmField, area, areaUnit, status, notes, createdAt, updatedAt, completionDate) " +
-                    "VALUES ('cycle_1', 'Rice', 'Main Season 2026', '2026-05-01', 'East Field', 2.5, 'hectare', 'ACTIVE', 'Regular Crop', 123456789L, 123456789L, NULL)"
+                    "VALUES ('cycle_1', 'Rice', 'Main Season 2026', '2026-05-01', 'East Field', 2.5, 'hectare', 'ACTIVE', 'Regular Crop', 123456789, 123456789, NULL)"
         )
         db.execSQL(
             "INSERT INTO harvests (id, cycleId, crop, date, quantity, unit, gradeQuality, sellingPriceCentavos, buyerId, notes, createdAt) " +
-                    "VALUES ('harvest_1', 'cycle_1', 'Rice', '2026-09-01', 1200.0, 'kg', 'Grade A', 2200L, 'buyer_1', 'First Harvest', 123456799L)"
+                    "VALUES ('harvest_1', 'cycle_1', 'Rice', '2026-09-01', 1200.0, 'kg', 'Grade A', 2200, 'buyer_1', 'First Harvest', 123456799)"
         )
         db.execSQL(
             "INSERT INTO sales (id, date, crop, quantity, unit, unitPriceCentavos, grossAmountCentavos, buyerId, buyerNameSnapshot, notes, cycleId, harvestId, isVoided, createdAt, updatedAt) " +
-                    "VALUES ('sale_1', '2026-09-02', 'Rice', 1200.0, 'kg', 2200L, 2640000L, 'buyer_1', 'Juan dela Cruz', 'Direct Sale', 'cycle_1', 'harvest_1', 0, 123456800L, 123456800L)"
+                    "VALUES ('sale_1', '2026-09-02', 'Rice', 1200.0, 'kg', 2200, 2640000, 'buyer_1', 'Juan dela Cruz', 'Direct Sale', 'cycle_1', 'harvest_1', 0, 123456800, 123456800)"
         )
         db.execSQL(
             "INSERT INTO payments (id, saleId, buyerId, date, amountCentavos, paymentMethod, reference, notes, isVoided, createdAt) " +
-                    "VALUES ('payment_1', 'sale_1', 'buyer_1', '2026-09-03', 1000000L, 'Cash', 'TXN-999', 'Partial Payment', 0, 123456810L)"
+                    "VALUES ('payment_1', 'sale_1', 'buyer_1', '2026-09-03', 1000000, 'Cash', 'TXN-999', 'Partial Payment', 0, 123456810)"
         )
         db.execSQL(
             "INSERT INTO expenses (id, date, category, amountIncurredCentavos, amountPaidCentavos, description, crop, cycleId, supplierId, supplierNameSnapshot, paymentMethod, reference, notes, isVoided, createdAt, updatedAt) " +
-                    "VALUES ('expense_1', '2026-05-05', 'Fertilizer', 500000L, 0L, 'Organic Fertilizer Bags', 'Rice', 'cycle_1', 'supplier_1', 'Maria Santos', 'Cash', 'REF-111', 'To Be Paid', 0, 123456820L, 123456820L)"
+                    "VALUES ('expense_1', '2026-05-05', 'Fertilizer', 500000, 0, 'Organic Fertilizer Bags', 'Rice', 'cycle_1', 'supplier_1', 'Maria Santos', 'Cash', 'REF-111', 'To Be Paid', 0, 123456820, 123456820)"
         )
         db.execSQL(
             "INSERT INTO expense_payments (id, expenseId, supplierId, date, amountCentavos, paymentMethod, reference, notes, isVoided, createdAt) " +
-                    "VALUES ('ep_1', 'expense_1', 'supplier_1', '2026-05-10', 300000L, 'Cash', 'REF-222', 'Deposit Payment', 0, 123456830L)"
+                    "VALUES ('ep_1', 'expense_1', 'supplier_1', '2026-05-10', 300000, 'Cash', 'REF-222', 'Deposit Payment', 0, 123456830)"
         )
         db.execSQL(
             "INSERT INTO audit_logs (id, timestamp, entityType, entityId, eventType, summary, metadataJson, appVersion) " +
-                    "VALUES ('audit_1', 123456840L, 'Sale', 'sale_1', 'CREATE', 'Created Rice Sale Record', '{}', '1.0.0')"
+                    "VALUES ('audit_1', 123456840, 'Sale', 'sale_1', 'CREATE', 'Created Rice Sale Record', '{}', '1.0.0')"
         )
     }
 }
