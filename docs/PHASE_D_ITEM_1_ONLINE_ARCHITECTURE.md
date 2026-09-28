@@ -59,20 +59,21 @@ Firestore query cursors and simple document timestamps are **NOT** themselves th
    - This is a per-record version integer saved in the local table row via the Migration 4→5.
    - It is used strictly for **local-vs-remote conflict detection** and controlled conflict resolution during sync processes.
    - **`record_sync_version` is NOT the incremental-sync cursor.**
-2. **`change_cursor` (Server-Managed Global Sync Sequence Checkpoint)**:
-   - This is an explicit, **server-managed synchronization sequence** that provides deterministic global ordering of all mutations. It is not generated or incremented independently by the clients.
+2. **`change_cursor` (Server-Managed User-Scoped Sync Sequence Checkpoint)**:
+   - This is an explicit, **server-managed synchronization sequence** that provides deterministic ordering of all mutations. It is not generated or incremented independently by clients.
+   - The `change_cursor` is **strictly scoped to the individual user's synchronization stream** under `/users/{uid}/_sync/` and is monotonically increasing, server-managed, and deterministic. It is NOT a global, database-wide sequence across different users.
    - Change-log cursor allocation and protected synchronization metadata are server-managed (e.g., via server-side database triggers, transaction hooks, or Cloud Functions) and must not be freely client-writable.
 3. **Atomic Business Write + Change Log**:
    - The authoritative cloud-write path is executed via a trusted server-side synchronization operation (e.g., secure API transactions or Cloud Functions) that atomically:
      1. Writes the business document (e.g., inside `/users/{userId}/sales/`).
-     2. Allocates the next sequential `change_cursor`.
+     2. Allocates the next sequential user-scoped `change_cursor`.
      3. Writes the corresponding `_sync/change_log` entry.
    - The business mutation and its change-log entry **MUST share one atomic transaction/batch boundary**. Asynchronous Firestore database triggers alone are insufficient, as transient triggering failures or out-of-order execution could violate atomicity and lead to unsynced records.
 4. **Proposed Server-Side Sync Change-Log Design**:
    - The server maintains a change-log collection:
      `/users/{uid}/_sync/change_log/{changeCursor}`
    - Each change-log entry conceptually contains:
-     - `change_cursor`: The unique, monotonically increasing sequence number/ID.
+     - `change_cursor`: The unique, monotonically increasing sequence number/ID (scoped per user stream).
      - `collection`: Name of the collection that changed (e.g., `"sales"`, `"payments"`).
      - `document_id`: The database UUID key of the target document.
      - `operation`: The action performed (`"UPSERT"`, `"VOID"`, `"DELETE"`).
@@ -270,21 +271,26 @@ It is crucial to separate secure Firestore-level authorization rules from applic
 - They do **not** enforce void-and-replace mechanics, double-spending logic, or audit log schemas.
 - Client-side `userId` or `ownerId` fields are never trusted; verification of ownership is based strictly on the cryptographically signed `request.auth.uid`.
 - **Change Log Security**: Ordinary authenticated clients are strictly forbidden from arbitrarily creating, modifying, or deleting any documents inside the `_sync` collection path. This metadata is strictly read-only for clients, ensuring the sequence cannot be compromised.
+- **Synchronized Business Write-Path Protection**: To enforce transaction integrity and sequence consistency, ordinary authenticated clients are **strictly forbidden** from writing, updating, or deleting business collections directly. All synchronized mutations must be performed via the trusted server-side synchronization operation (e.g., using Cloud Functions with privileged server credentials) which atomically writes the business documents and allocates the synchronization cursors.
 
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Change Log: Read-only access to prevent client-side sequence tampering
+    // Change Log: Read-only access to prevent client-side sequence tampering.
+    // Writes are performed only by the trusted server-side synchronization operation.
     match /users/{userId}/_sync/{document=**} {
       allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if false; // Writing sequence data must be handled exclusively by trusted server triggers
+      allow write: if false; 
     }
     
-    // Force strict authenticated ownership check at the path parameter level
+    // Synchronized Business Collections: Clients can only read their own data.
+    // All client-side direct writes are denied to guarantee transactional sequence integrity.
+    // Writing is handled exclusively by trusted server-side code using privileged server credentials.
     match /users/{userId}/{collectionName}/{documentId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
     }
     
     // Global default deny
