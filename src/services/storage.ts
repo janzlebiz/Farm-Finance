@@ -136,7 +136,8 @@ export const StorageService = {
           entityId: 'SYSTEM',
           eventType: 'CREATE',
           summary: 'Farm financial database initialized',
-          appVersion: APP_VERSION
+          appVersion: APP_VERSION,
+          sync_state: 'SYNCED'
         }
       ]
     };
@@ -1760,6 +1761,22 @@ export const StorageService = {
     const clean = this.getInitialData();
     this.saveMemoryDatabase(clean);
     return { success: true, message: 'All records cleared. Database is now ready for a clean new user!' };
+  },
+
+  clearLocalUserData(): void {
+    this.resetToCleanState();
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('farm_finance_') || key.includes('sync'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach((k) => removeStorageItem(k));
+      }
+    } catch (_: any) {}
   },
 
   // CSV Generation for all major datasets

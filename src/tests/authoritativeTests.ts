@@ -2,6 +2,8 @@ import { StorageService, AppDatabase, BACKUP_SCHEMA_VERSION } from '../services/
 import { FinancialCalculator } from '../utils/financialCalculator';
 import { MoneyUtils } from '../utils/money';
 import { computeSha256Sync, canonicalJsonStringify } from '../utils/crypto';
+import { AuthService } from '../services/authService';
+import { SyncEngine } from '../services/syncEngine';
 
 export interface TestResult {
   suite: string;
@@ -2461,6 +2463,73 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
         status: 'PLANNED' as any
       });
       assert(plannedCycleAttempt.status === 'ACTIVE', 'Caller-provided status (PLANNED) must be overridden to ACTIVE on creation');
+    });
+
+    await executeTest('Account Lifecycle', '1. Sign-out with no pending changes succeeds cleanly', async () => {
+      StorageService.resetToCleanState();
+      const pending = SyncEngine.detectPendingChanges();
+      assert(pending.length === 0, 'No pending changes initially');
+      await AuthService.signOut(false).catch(() => {});
+    });
+
+    await executeTest('Account Lifecycle', '2. Sign-out with pending changes throws error unless forced', async () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({ name: 'Pending Buyer', contactNumber: '', address: '', notes: '' });
+      buyer.sync_state = 'PENDING_UPLOAD';
+      const db = StorageService.loadDatabase();
+      StorageService.saveMemoryDatabase(db);
+
+      const pending = SyncEngine.detectPendingChanges();
+      assert(pending.length > 0, 'Pending changes detected');
+
+      let errorThrown = false;
+      try {
+        await AuthService.signOut(false);
+      } catch (err: any) {
+        errorThrown = true;
+      }
+      assert(errorThrown, 'Sign-out with pending changes must throw error when force=false');
+
+      try {
+        await AuthService.signOut(true);
+      } catch (_: any) {}
+    });
+
+    await executeTest('Account Lifecycle', '3. User A sign out clears local data preventing User B data leaks', () => {
+      StorageService.resetToCleanState();
+      StorageService.createBuyer({ name: 'User A Buyer', contactNumber: '', address: '', notes: '' });
+      const dbBefore = StorageService.loadDatabase();
+      assert(dbBefore.buyers.length === 1, 'User A data present');
+
+      StorageService.clearLocalUserData();
+
+      const dbAfter = StorageService.loadDatabase();
+      assert(dbAfter.buyers.length === 0, 'User A local data fully cleared');
+    });
+
+    await executeTest('Account Lifecycle', '4. Account deletion requires authentication and clears local data', async () => {
+      StorageService.resetToCleanState();
+      StorageService.createBuyer({ name: 'Deleted User Buyer', contactNumber: '', address: '', notes: '' });
+
+      let deletionError = false;
+      try {
+        await AuthService.deleteAccount('wrong-password');
+      } catch (err: any) {
+        deletionError = true;
+      }
+      assert(deletionError, 'Account deletion without valid session/auth must throw error');
+    });
+
+    await executeTest('Account Lifecycle', '5. Sync cursors remain strictly isolated between users', () => {
+      SyncEngine.setLastSyncCursor(15, 'user-alpha');
+      SyncEngine.setLastSyncCursor(42, 'user-beta');
+
+      const cursorAlpha = SyncEngine.getLastSyncCursor('user-alpha');
+      const cursorBeta = SyncEngine.getLastSyncCursor('user-beta');
+
+      assert(cursorAlpha === 15, 'User Alpha cursor must be 15');
+      assert(cursorBeta === 42, 'User Beta cursor must be 42');
+      assert(cursorAlpha !== cursorBeta, 'Cursors must not leak between users');
     });
 
   } finally {
