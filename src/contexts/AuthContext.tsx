@@ -8,6 +8,7 @@ interface AuthContextType {
   error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   deleteAccount: (password?: string) => Promise<void>;
   clearError: () => void;
@@ -61,6 +62,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return 'An account with this email already exists.';
         case 'auth/weak-password':
           return 'Password should be at least 6 characters.';
+        case 'auth/operation-not-allowed':
+          return 'Email/Password sign-in is not enabled in Firebase Console. You can sign in using Google or enable Email/Password in your Firebase Console under Authentication > Sign-in method.';
         case 'auth/network-request-failed':
           return 'Network connection failed. Please check your internet.';
         default:
@@ -89,6 +92,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true);
     try {
       await AuthService.register(email, password);
+    } catch (err) {
+      const message = formatAuthError(err);
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      await AuthService.signInWithGoogle();
     } catch (err) {
       const message = formatAuthError(err);
       setError(message);
@@ -134,6 +151,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         error,
         signIn,
         register,
+        signInWithGoogle,
         signOut,
         deleteAccount,
         clearError

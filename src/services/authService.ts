@@ -5,6 +5,8 @@ import {
   onAuthStateChanged,
   reauthenticateWithCredential,
   EmailAuthProvider,
+  GoogleAuthProvider,
+  signInWithPopup,
   User,
   NextOrObserver
 } from 'firebase/auth';
@@ -48,6 +50,22 @@ export const AuthService = {
     // Create the minimal user profile document at /users/{uid}
     await UserService.createOrUpdateProfile(userCredential.user).catch((err) => {
       console.warn('Could not create user profile document on registration:', err);
+    });
+    return userCredential.user;
+  },
+
+  /**
+   * Sign in with Google Popup
+   */
+  async signInWithGoogle(): Promise<User> {
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      throw new Error('Firebase Authentication is not available on this device.');
+    }
+    const provider = new GoogleAuthProvider();
+    const userCredential = await signInWithPopup(auth, provider);
+    await UserService.createOrUpdateProfile(userCredential.user).catch((err) => {
+      console.warn('Could not sync user profile document on Google sign-in:', err);
     });
     return userCredential.user;
   },
