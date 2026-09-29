@@ -33,11 +33,14 @@ jobs:
       - name: Accept Android SDK Licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Build Web Application
+      - name: Build Android Embedded Web Application
+        env:
+          VITE_ANDROID_EMBEDDED: "true"
+          VITE_SYNC_API_BASE_URL: "https://ais-dev-4j5endhlb7xdjhr6276ndv-212282537635.asia-east1.run.app"
         run: |
           if [ -f "package.json" ]; then
             npm install --legacy-peer-deps --no-audit
-            npm run build
+            npm run build:android-assets
           fi
 
       - name: Determine Project Directory & Ensure Assets
@@ -75,16 +78,30 @@ jobs:
           echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher.xml
           echo "$ADAPTIVE" > app/src/main/res/mipmap/ic_launcher_round.xml
 
-          # 3. Copy compiled web app assets directly into Android app assets
+          # 3. Clean and copy compiled web app assets directly into Android app assets
+          rm -rf app/src/main/assets/www/*
           mkdir -p app/src/main/assets/www
           if [ -d "../dist" ]; then
             cp -r ../dist/* app/src/main/assets/www/
           elif [ -d "dist" ]; then
             cp -r dist/* app/src/main/assets/www/
           fi
+
+          # 4. Strict verification step in CI to assert zero PWA files in assets
+          echo "Verifying Android assets in app/src/main/assets/www/:"
           ls -la app/src/main/assets/www/
 
-          # 4. Ensure Gradle wrapper exists
+          if [ -f "app/src/main/assets/www/registerSW.js" ] || [ -f "app/src/main/assets/www/sw.js" ] || [ -f "app/src/main/assets/www/manifest.webmanifest" ]; then
+            echo "::error::CI Packaging Defect: PWA service worker files detected in Android assets directory!"
+            exit 1
+          fi
+
+          if grep -q "registerSW.js" app/src/main/assets/www/index.html || grep -q "manifest.webmanifest" app/src/main/assets/www/index.html; then
+            echo "::error::CI Packaging Defect: PWA script or manifest reference found in index.html!"
+            exit 1
+          fi
+
+          # 5. Ensure Gradle wrapper exists
           if [ ! -f "gradlew" ]; then
             echo "Generating Gradle wrapper..."
             gradle wrapper --gradle-version 8.7 || true
