@@ -9,6 +9,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: (password?: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -98,6 +99,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const deleteAccount = async (password?: string) => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      await AuthService.deleteAccount(password);
+    } catch (err) {
+      const message = formatAuthError(err);
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -107,6 +122,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         signIn,
         register,
         signOut,
+        deleteAccount,
         clearError
       }}
     >

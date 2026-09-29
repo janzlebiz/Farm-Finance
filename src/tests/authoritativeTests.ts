@@ -2577,6 +2577,25 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(dbLocal.buyers.length === 0, 'Step 6: Local Room/IndexedDB data cleared cleanly');
     });
 
+    await executeTest('Account Deletion Failure Protection', 'Failed deletion must preserve local data intact', async () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({ name: 'Important Preserved Buyer', contactNumber: '', address: '', notes: '' });
+      const dbBefore = StorageService.loadDatabase();
+      assert(dbBefore.buyers.length === 1, 'Local data exists before failed deletion attempt');
+
+      let deletionFailed = false;
+      try {
+        await AuthService.deleteAccount('invalid-password-that-fails');
+      } catch {
+        deletionFailed = true;
+      }
+      assert(deletionFailed, 'Deletion attempt failed as expected');
+
+      const dbAfter = StorageService.loadDatabase();
+      assert(dbAfter.buyers.length === 1, 'Local data must be preserved and not cleared when deletion fails');
+      assert(dbAfter.buyers[0].name === 'Important Preserved Buyer', 'Preserved buyer data remains intact');
+    });
+
   } finally {
     // Restore original user database state
     StorageService.saveMemoryDatabase(originalDb);

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useCloudSync } from '../hooks/useCloudSync';
-import { LogIn, UserPlus, LogOut, CheckCircle2, AlertCircle, Loader2, KeyRound, Mail, ShieldCheck, RefreshCw } from 'lucide-react';
+import { LogIn, UserPlus, LogOut, CheckCircle2, AlertCircle, Loader2, KeyRound, Mail, ShieldCheck, RefreshCw, Trash2 } from 'lucide-react';
 
 interface AuthModalProps {
   onClose: () => void;
@@ -9,7 +9,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete }) => {
-  const { user, isLoading, error, signIn, register, signOut, clearError } = useAuth();
+  const { user, isLoading, error, signIn, register, signOut, deleteAccount, clearError } = useAuth();
   const { isSyncing, lastSyncedAt, syncError, pendingCount, conflictCount, syncNow } = useCloudSync(user, onSyncComplete);
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
   const [email, setEmail] = useState('');
@@ -17,6 +17,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete })
   const [confirmPassword, setConfirmPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  // Delete account confirmation flow states
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [confirmDeleteText, setConfirmDeleteText] = useState('');
 
   const handleSwitchMode = (newMode: 'signin' | 'register') => {
     setMode(newMode);
@@ -63,7 +68,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete })
       setPassword('');
       setConfirmPassword('');
     } catch {
-      // Error is tracked in AuthContext and displayed
+      // Error tracked in AuthContext
     }
   };
 
@@ -75,6 +80,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete })
       setActionSuccess('Successfully signed out.');
     } catch {
       // Handled in context
+    }
+  };
+
+  const handleDeleteAccountSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalError(null);
+    setActionSuccess(null);
+
+    if (!deletePassword) {
+      setLocalError('Please enter your password for recent re-authentication.');
+      return;
+    }
+
+    if (confirmDeleteText !== 'DELETE') {
+      setLocalError('Please type DELETE to confirm permanent account deletion.');
+      return;
+    }
+
+    try {
+      await deleteAccount(deletePassword);
+      setActionSuccess('Account and cloud data successfully deleted.');
+      setShowDeleteConfirm(false);
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+    } catch {
+      // Error handled in AuthContext; local data is NOT cleared on failure
     }
   };
 
@@ -200,20 +232,92 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete })
                 <p>Security rules restrict Firestore access strictly to your own user document. All other users, collections, and internal sync paths are strictly denied.</p>
               </div>
 
-              <button
-                onClick={handleSignOut}
-                disabled={isLoading}
-                className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+              <div className="space-y-2 pt-1">
+                <button
+                  onClick={handleSignOut}
+                  disabled={isLoading}
+                  className="w-full py-2.5 px-4 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <LogOut className="w-4 h-4" />
+                      <span>Sign Out</span>
+                    </>
+                  )}
+                </button>
+
+                {!showDeleteConfirm ? (
+                  <button
+                    onClick={() => {
+                      setShowDeleteConfirm(true);
+                      clearError();
+                      setLocalError(null);
+                    }}
+                    className="w-full py-2 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Account & Cloud Data</span>
+                  </button>
                 ) : (
-                  <>
-                    <LogOut className="w-4 h-4" />
-                    <span>Sign Out</span>
-                  </>
+                  <form onSubmit={handleDeleteAccountSubmit} className="p-3 rounded-xl bg-rose-50 border border-rose-300 space-y-3 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-rose-900 flex items-center gap-1.5">
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        Confirm Permanent Deletion
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="text-[11px] text-slate-500 hover:text-slate-800 font-semibold"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-rose-800">
+                      This will permanently purge all cloud data under <code className="font-mono font-bold">/users/{user.uid}</code>, delete your Firebase Auth account, and clear local storage. This cannot be undone.
+                    </p>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-rose-900 mb-1">Recent Password (Re-authentication)</label>
+                      <input
+                        type="password"
+                        required
+                        value={deletePassword}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                        placeholder="Enter password"
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-rose-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-rose-500 transition"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-rose-900 mb-1">Type <span className="font-mono font-bold">DELETE</span> to confirm</label>
+                      <input
+                        type="text"
+                        required
+                        value={confirmDeleteText}
+                        onChange={(e) => setConfirmDeleteText(e.target.value)}
+                        placeholder="Type DELETE"
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-rose-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-rose-500 transition font-mono uppercase"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isLoading || confirmDeleteText !== 'DELETE'}
+                      className="w-full py-2 px-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+                    >
+                      {isLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <span>Permanently Delete My Account</span>
+                      )}
+                    </button>
+                  </form>
                 )}
-              </button>
+              </div>
             </div>
           ) : (
             /* Unauthenticated Form (Sign In / Register) */

@@ -281,6 +281,7 @@ export class ServerSyncService {
   /**
    * Completely purges all user-owned Firestore data under /users/{userId},
    * including business_data, _sync, and the user root document.
+   * Note: Firestore cloud purge is batch-based across subcollections, not atomic.
    */
   static async purgeUserData(userId: string): Promise<void> {
     if (!userId || typeof userId !== 'string') {
