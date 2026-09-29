@@ -10,6 +10,7 @@ import { StorageService } from './storage';
 import { SyncClient } from './syncClient';
 
 const SYNC_CURSOR_STORAGE_KEY = 'farm_finance_last_sync_cursor';
+const memoryCursorStorage = new Map<string, number>();
 
 export type SyncDispatcher = {
   push: (req: SyncPushRequest) => Promise<SyncPushResponse>;
@@ -42,28 +43,35 @@ export class SyncEngine {
   /**
    * Retrieves the locally persisted sync cursor
    */
-  static getLastSyncCursor(): number {
+  static getLastSyncCursor(userId?: string): number {
     if (typeof window !== 'undefined' && (window as any).FarmFinanceNative?.getSyncCursor) {
       try {
         const cursor = Number((window as any).FarmFinanceNative.getSyncCursor());
         if (!isNaN(cursor) && cursor >= 0) return cursor;
       } catch (_: any) {}
     }
-    if (typeof localStorage === 'undefined') return 0;
-    const val = localStorage.getItem(SYNC_CURSOR_STORAGE_KEY);
-    return val ? parseInt(val, 10) || 0 : 0;
+    const key = userId ? `${SYNC_CURSOR_STORAGE_KEY}_${userId}` : SYNC_CURSOR_STORAGE_KEY;
+    if (typeof localStorage === 'undefined') {
+      return memoryCursorStorage.get(key) ?? memoryCursorStorage.get(SYNC_CURSOR_STORAGE_KEY) ?? 0;
+    }
+    const val = localStorage.getItem(key) || (!userId ? null : localStorage.getItem(SYNC_CURSOR_STORAGE_KEY));
+    return val ? parseInt(val, 10) || 0 : (memoryCursorStorage.get(key) ?? 0);
   }
 
   /**
    * Persists the last synchronized cursor locally
    */
-  static setLastSyncCursor(cursor: number): void {
+  static setLastSyncCursor(cursor: number, userId?: string): void {
     if (typeof window !== 'undefined' && (window as any).FarmFinanceNative?.setSyncCursor) {
       try {
         (window as any).FarmFinanceNative.setSyncCursor(cursor);
       } catch (_: any) {}
     }
+    const key = userId ? `${SYNC_CURSOR_STORAGE_KEY}_${userId}` : SYNC_CURSOR_STORAGE_KEY;
+    memoryCursorStorage.set(key, cursor);
+    memoryCursorStorage.set(SYNC_CURSOR_STORAGE_KEY, cursor);
     if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(key, cursor.toString());
     localStorage.setItem(SYNC_CURSOR_STORAGE_KEY, cursor.toString());
   }
 
@@ -179,7 +187,7 @@ export class SyncEngine {
         );
       } catch (_: any) {}
     }
-    this.setLastSyncCursor(res.currentServerCursor);
+    this.setLastSyncCursor(res.currentServerCursor, userId);
 
     return {
       appliedCount,
@@ -198,7 +206,7 @@ export class SyncEngine {
     pulledChangesCount: number;
     response: SyncPullResponse;
   }> {
-    const sinceCursor = this.getLastSyncCursor();
+    const sinceCursor = this.getLastSyncCursor(userId);
     const pullReq: SyncPullRequest = {
       userId,
       sinceCursor
@@ -294,7 +302,7 @@ export class SyncEngine {
         } catch (_: any) {}
       }
     }
-    this.setLastSyncCursor(res.currentServerCursor);
+    this.setLastSyncCursor(res.currentServerCursor, userId);
 
     return {
       pulledChangesCount,

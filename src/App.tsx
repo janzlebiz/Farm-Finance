@@ -4,6 +4,7 @@ import { Sale, Payment, Expense, ExpenseCategory, Buyer, Supplier, ProductionCyc
 import { MoneyUtils } from './utils/money';
 import { DateUtils } from './utils/date';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useCloudSync } from './hooks/useCloudSync';
 
 // Tab screens
 import { DashboardTab } from './components/DashboardTab';
@@ -97,7 +98,7 @@ function AppContent() {
   }, [welcomeToast]);
 
   // Load database
-  const reloadData = () => {
+  const reloadData = React.useCallback(() => {
     const db = StorageService.loadDatabase();
     setSales([...db.sales]);
     setPayments([...db.payments]);
@@ -109,11 +110,14 @@ function AppContent() {
     setHarvests([...db.harvests]);
     setAuditLogs([...db.auditLogs]);
     setFarmProfile(StorageService.getFarmProfile());
-  };
+  }, []);
+
+  // Web/PWA Cloud Sync Integration
+  const { isSyncing, pendingCount, conflictCount } = useCloudSync(user, reloadData);
 
   useEffect(() => {
     reloadData();
-  }, []);
+  }, [reloadData]);
 
   const handleOnboardingComplete = (profile: FarmProfile) => {
     StorageService.completeOnboarding(profile);
@@ -170,10 +174,32 @@ function AppContent() {
             onClick={() => setIsAuthModalOpen(true)}
             className="p-2 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 transition flex items-center gap-1"
             aria-label="Cloud Account"
-            title={user ? `Signed in as ${user.email}` : 'Sign In / Account'}
+            title={
+              user
+                ? `Signed in as ${user.email}${
+                    isSyncing
+                      ? ' (Syncing...)'
+                      : pendingCount > 0
+                      ? ` (${pendingCount} pending upload)`
+                      : ' (Synced)'
+                  }`
+                : 'Sign In / Account'
+            }
           >
             <ShieldCheck className="w-4 h-4" />
-            {user && <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />}
+            {user && (
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isSyncing
+                    ? 'bg-amber-300 animate-ping'
+                    : conflictCount > 0
+                    ? 'bg-rose-400'
+                    : pendingCount > 0
+                    ? 'bg-amber-400'
+                    : 'bg-emerald-300'
+                }`}
+              />
+            )}
           </button>
           <button
             onClick={() => setIsMoreMenuOpen(true)}
@@ -287,6 +313,7 @@ function AppContent() {
       {isAuthModalOpen && (
         <AuthModal
           onClose={() => setIsAuthModalOpen(false)}
+          onSyncComplete={reloadData}
         />
       )}
 

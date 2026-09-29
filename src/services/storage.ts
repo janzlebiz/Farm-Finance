@@ -196,6 +196,11 @@ export const StorageService = {
     try {
       sessionStorage.setItem('farm_finance_preview_db', JSON.stringify(db));
     } catch (_: any) {}
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('farm_finance_db_updated'));
+      } catch (_: any) {}
+    }
   },
 
   // One-time automatic migration of v1.0 localStorage data into native Room
@@ -424,9 +429,11 @@ export const StorageService = {
     const associatedPayments = db.payments.filter((p) => p.saleId === saleId && !p.isVoided);
     for (const p of associatedPayments) {
       p.isVoided = true;
+      p.sync_state = 'PENDING_UPLOAD';
     }
 
     sale.isVoided = true;
+    sale.sync_state = 'PENDING_UPLOAD';
     sale.updatedAt = new Date().toISOString();
 
     this.addAuditLog(

@@ -50,6 +50,18 @@ function arePayloadsIdentical(incomingPayload: any, existingServerRecord: any, e
   return true;
 }
 
+function cleanUndefined(obj: any): any {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(cleanUndefined);
+  const cleaned: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) {
+      cleaned[key] = cleanUndefined(val);
+    }
+  }
+  return cleaned;
+}
+
 export class ServerSyncService {
   /**
    * Process client push request with authoritative server validation,
@@ -150,7 +162,7 @@ export class ServerSyncService {
         const lastSyncedAt = Date.now();
 
         const isVoid = item.operation === 'VOID' || item.payload?.isVoided === true || item.payload?.status === 'VOID';
-        const serverAssignedRecord = {
+        const serverAssignedRecord = cleanUndefined({
           ...item.payload,
           id: item.entityId,
           isVoided: isVoid,
@@ -158,21 +170,21 @@ export class ServerSyncService {
           sync_state: 'SYNCED',
           record_sync_version: newVersion,
           last_synced_at: lastSyncedAt
-        };
+        });
 
         // Write business record
         transaction.set(recordRef, serverAssignedRecord);
 
         // Write immutable change log entry to _sync subcollection
         const changeLogRef = adminDb.doc(`users/${userId}/_sync/change_log_${currentCursor}`);
-        const logEntry: SyncChangeLogEntry = {
+        const logEntry: SyncChangeLogEntry = cleanUndefined({
           cursor: currentCursor,
           entityType: item.entityType,
           entityId: item.entityId,
           operation: item.operation,
           record: serverAssignedRecord,
           timestamp: lastSyncedAt
-        };
+        });
         transaction.set(changeLogRef, logEntry);
 
         results.push({

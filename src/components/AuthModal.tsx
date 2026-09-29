@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LogIn, UserPlus, LogOut, CheckCircle2, AlertCircle, Loader2, KeyRound, Mail, ShieldCheck } from 'lucide-react';
+import { useCloudSync } from '../hooks/useCloudSync';
+import { LogIn, UserPlus, LogOut, CheckCircle2, AlertCircle, Loader2, KeyRound, Mail, ShieldCheck, RefreshCw } from 'lucide-react';
 
 interface AuthModalProps {
   onClose: () => void;
+  onSyncComplete?: () => void;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete }) => {
   const { user, isLoading, error, signIn, register, signOut, clearError } = useAuth();
+  const { isSyncing, lastSyncedAt, syncError, pendingCount, conflictCount, syncNow } = useCloudSync(user, onSyncComplete);
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -146,6 +149,50 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
                     <span className="font-mono text-[10px] text-emerald-800 font-medium">/users/{user.uid}</span>
                   </div>
                 </div>
+              </div>
+
+              {/* Cloud Sync Status & Actions */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800">
+                    <RefreshCw className={`w-3.5 h-3.5 text-emerald-700 ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>Cloud Synchronization</span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-slate-500">
+                    {lastSyncedAt ? `Synced ${lastSyncedAt.toLocaleTimeString()}` : 'Ready to sync'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 bg-white rounded-lg border border-slate-200">
+                    <div className="text-[10px] text-slate-500">Pending Upload</div>
+                    <div className={`text-sm font-bold ${pendingCount > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
+                      {pendingCount} record{pendingCount === 1 ? '' : 's'}
+                    </div>
+                  </div>
+                  <div className="p-2 bg-white rounded-lg border border-slate-200">
+                    <div className="text-[10px] text-slate-500">Sync Conflicts</div>
+                    <div className={`text-sm font-bold ${conflictCount > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                      {conflictCount}
+                    </div>
+                  </div>
+                </div>
+
+                {syncError && (
+                  <p className="text-[11px] text-rose-600 font-medium">
+                    Sync Error: {syncError}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => syncNow()}
+                  disabled={isSyncing}
+                  className="w-full py-2 px-3 bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isSyncing ? 'Synchronizing with Cloud...' : 'Sync with Cloud Now'}</span>
+                </button>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
