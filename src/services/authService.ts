@@ -8,8 +8,7 @@ import {
   User,
   NextOrObserver
 } from 'firebase/auth';
-import { doc, deleteDoc } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { auth } from './firebase';
 import { UserService, UserProfile } from './userService';
 import { SyncEngine } from './syncEngine';
 import { StorageService } from './storage';
@@ -62,8 +61,8 @@ export const AuthService = {
   },
 
   /**
-   * Secure account deletion with server-side / Firestore user data purge and Firebase Auth deletion.
-   * Handles required re-authentication if password is provided.
+   * Secure account deletion with authenticated server-side cloud purge and Firebase Auth deletion.
+   * Requires recent re-authentication and never silently continues if cloud purge fails.
    */
   async deleteAccount(password?: string): Promise<void> {
     const user = auth.currentUser;
@@ -80,27 +79,23 @@ export const AuthService = {
       }
     }
 
-    const uid = user.uid;
+    // Get fresh ID token for authenticated server request
+    const token = await user.getIdToken(true);
 
-    // Purge user data from Firestore (/users/{uid})
-    try {
-      const userRef = doc(db, 'users', uid);
-      await deleteDoc(userRef);
-    } catch (err) {
-      console.warn('Could not delete user Firestore document:', err);
-    }
-
-    // Delete Firebase Auth account
-    try {
-      await user.delete();
-    } catch (err: any) {
-      if (err.code === 'auth/requires-recent-login') {
-        throw new Error('Recent authentication required to delete account. Please sign out, sign in again, and retry.');
+    const response = await fetch('/api/auth/delete-account', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
       }
-      throw err;
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Account deletion and cloud purge failed on server.');
     }
 
-    // Clear local user data & sync cursors
+    // Clear Android Room / Web local data ONLY after successful server-side cloud purge and auth deletion
     StorageService.clearLocalUserData();
   },
 

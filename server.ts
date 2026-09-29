@@ -76,6 +76,21 @@ async function createServer() {
     }
   });
 
+  // Authenticated Account Deletion & Cloud Purge Endpoint
+  app.post('/api/auth/delete-account', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userUid = req.userUid!;
+      // 1. Purge all user-owned Firestore data under /users/{uid}
+      await ServerSyncService.purgeUserData(userUid);
+      // 2. Delete Firebase Auth account only after cloud purge succeeds
+      await adminAuth.deleteUser(userUid);
+      res.json({ success: true, message: 'Account and cloud data successfully purged.' });
+    } catch (err: any) {
+      console.error('Error in /api/auth/delete-account:', err);
+      res.status(400).json({ error: err.message || 'Account deletion and cloud purge failed' });
+    }
+  });
+
   if (!isProd) {
     // Development: integrate Vite dev server middlewares
     const { createServer: createViteServer } = await import('vite');

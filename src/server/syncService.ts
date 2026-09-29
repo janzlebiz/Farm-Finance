@@ -277,4 +277,46 @@ export class ServerSyncService {
       changes
     };
   }
+
+  /**
+   * Completely purges all user-owned Firestore data under /users/{userId},
+   * including business_data, _sync, and the user root document.
+   */
+  static async purgeUserData(userId: string): Promise<void> {
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('Invalid userId for data purge');
+    }
+
+    const userRootRef = adminDb.doc(`users/${userId}`);
+
+    const deleteCollection = async (collectionRef: FirebaseFirestore.CollectionReference) => {
+      const query = collectionRef.limit(100);
+      return new Promise<void>((resolve, reject) => {
+        const deleteQueryBatch = (dbQuery: FirebaseFirestore.Query, resResolve: () => void, resReject: (err: any) => void) => {
+          dbQuery.get().then((snapshot) => {
+            if (snapshot.size === 0) {
+              return resResolve();
+            }
+            const batch = adminDb.batch();
+            snapshot.docs.forEach((doc) => {
+              batch.delete(doc.ref);
+            });
+            batch.commit().then(() => {
+              process.nextTick(() => {
+                deleteQueryBatch(dbQuery, resResolve, resReject);
+              });
+            }).catch(resReject);
+          }).catch(resReject);
+        };
+        deleteQueryBatch(query, resolve, reject);
+      });
+    };
+
+    const businessDataRef = adminDb.collection(`users/${userId}/business_data`);
+    const syncRef = adminDb.collection(`users/${userId}/_sync`);
+
+    await deleteCollection(businessDataRef);
+    await deleteCollection(syncRef);
+    await userRootRef.delete();
+  }
 }
