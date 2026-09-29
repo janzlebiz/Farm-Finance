@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { CloudSyncState } from '../hooks/useCloudSync';
+import { SyncClient } from '../services/syncClient';
 import { LogIn, UserPlus, LogOut, CheckCircle2, AlertCircle, Loader2, KeyRound, Mail, ShieldCheck, RefreshCw, Trash2 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -73,6 +74,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
     }
   };
 
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  const runConnectivityTest = async () => {
+    setTestResult('Running A: GET /api/health...');
+    const baseUrl = SyncClient.getBaseUrl();
+    try {
+      const resA = await fetch(`${baseUrl}/api/health`);
+      if (resA.status !== 200) throw new Error(`A failed: ${resA.status}`);
+      
+      setTestResult('A passed. Running B: POST /api/sync/push (no auth)...');
+      const resB = await fetch(`${baseUrl}/api/sync/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ changes: [] })
+      });
+      if (resB.status !== 401) throw new Error(`B failed: ${resB.status}`);
+
+      setTestResult('A and B passed. Running C: Authenticated Sync...');
+      await syncNow();
+      setTestResult('Connectivity Test Completed Successfully.');
+    } catch (err: any) {
+      setTestResult(`Test Failed: ${err.message}`);
+    }
+  };
+
   const handleSignOut = async () => {
     setLocalError(null);
     setActionSuccess(null);
@@ -94,7 +120,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
       return;
     }
 
-    if (confirmDeleteText !== 'DELETE') {
+    if (confirmDeleteText.trim().toUpperCase() !== 'DELETE') {
       setLocalError('Please type DELETE to confirm permanent account deletion.');
       return;
     }
@@ -237,6 +263,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                   <span>{isSyncing ? 'Synchronizing with Cloud...' : 'Sync with Cloud Now'}</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={runConnectivityTest}
+                  className="w-full py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10px] rounded-lg transition cursor-pointer mt-2"
+                >
+                  Run Cloud Connectivity Test
+                </button>
+
+                {testResult && (
+                   <div className="mt-2 p-2 bg-slate-900 text-slate-100 text-[10px] font-mono rounded-lg overflow-x-auto whitespace-pre-wrap">
+                     {testResult}
+                   </div>
+                )}
               </div>
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
@@ -323,7 +363,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
 
                     <button
                       type="submit"
-                      disabled={isLoading || !deletePassword.trim() || confirmDeleteText !== 'DELETE'}
+                      disabled={isLoading || !deletePassword.trim() || confirmDeleteText.trim().toUpperCase() !== 'DELETE'}
                       className="w-full py-2 px-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
                     >
                       {isLoading ? (
