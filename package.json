@@ -16,7 +16,8 @@
     "test:sync": "tsx scripts/testSyncFoundation.ts",
     "test:gate1": "tsx scripts/testLiveCloudSync.ts",
     "test:gate2": "tsx scripts/testGate2FailureBehavior.ts",
-    "test:gate2-live": "VITE_SYNC_API_BASE_URL=${VITE_SYNC_API_BASE_URL:-http://localhost:3000} tsx scripts/testLiveMultiDeviceSync.ts"
+    "test:gate2-live": "VITE_SYNC_API_BASE_URL=${VITE_SYNC_API_BASE_URL:-http://localhost:3000} tsx scripts/testLiveMultiDeviceSync.ts",
+    "test:android-sync": "tsx scripts/testAndroidRoomSyncIntegration.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.0.0",

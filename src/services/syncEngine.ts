@@ -43,6 +43,12 @@ export class SyncEngine {
    * Retrieves the locally persisted sync cursor
    */
   static getLastSyncCursor(): number {
+    if (typeof window !== 'undefined' && (window as any).FarmFinanceNative?.getSyncCursor) {
+      try {
+        const cursor = Number((window as any).FarmFinanceNative.getSyncCursor());
+        if (!isNaN(cursor) && cursor >= 0) return cursor;
+      } catch (_: any) {}
+    }
     if (typeof localStorage === 'undefined') return 0;
     const val = localStorage.getItem(SYNC_CURSOR_STORAGE_KEY);
     return val ? parseInt(val, 10) || 0 : 0;
@@ -52,6 +58,11 @@ export class SyncEngine {
    * Persists the last synchronized cursor locally
    */
   static setLastSyncCursor(cursor: number): void {
+    if (typeof window !== 'undefined' && (window as any).FarmFinanceNative?.setSyncCursor) {
+      try {
+        (window as any).FarmFinanceNative.setSyncCursor(cursor);
+      } catch (_: any) {}
+    }
     if (typeof localStorage === 'undefined') return;
     localStorage.setItem(SYNC_CURSOR_STORAGE_KEY, cursor.toString());
   }
@@ -160,6 +171,14 @@ export class SyncEngine {
 
     // Save updated metadata back to local database authority
     StorageService.saveMemoryDatabase(db);
+    if (typeof window !== 'undefined' && (window as any).FarmFinanceNative?.applySyncPushResults) {
+      try {
+        (window as any).FarmFinanceNative.applySyncPushResults(
+          JSON.stringify(res.results),
+          res.currentServerCursor
+        );
+      } catch (_: any) {}
+    }
     this.setLastSyncCursor(res.currentServerCursor);
 
     return {
@@ -258,6 +277,23 @@ export class SyncEngine {
     }
 
     StorageService.saveMemoryDatabase(db);
+    if (typeof window !== 'undefined') {
+      if (res.isBootstrap && res.dataset && (window as any).FarmFinanceNative?.applySyncPullDataset) {
+        try {
+          (window as any).FarmFinanceNative.applySyncPullDataset(
+            JSON.stringify(res.dataset),
+            res.currentServerCursor
+          );
+        } catch (_: any) {}
+      } else if (res.changes && res.changes.length > 0 && (window as any).FarmFinanceNative?.applySyncPullChanges) {
+        try {
+          (window as any).FarmFinanceNative.applySyncPullChanges(
+            JSON.stringify(res.changes),
+            res.currentServerCursor
+          );
+        } catch (_: any) {}
+      }
+    }
     this.setLastSyncCursor(res.currentServerCursor);
 
     return {

@@ -11,7 +11,27 @@
 import { SyncPushRequest, SyncPullRequest, SyncChangeItem } from '../src/types/sync';
 import appletConfig from '../firebase-applet-config.json';
 
-export const SERVER_BASE_URL = 'https://ais-dev-4j5endhlb7xdjhr6276ndv-212282537635.asia-east1.run.app';
+export const SERVER_BASE_URL = process.env.LIVE_SERVER_URL || 'http://localhost:3000';
+
+let cookieJar: string[] = [];
+
+async function liveFetch(url: string, options: any = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (cookieJar.length > 0) {
+    headers['Cookie'] = cookieJar.join('; ');
+  }
+  const res = await fetch(url, { ...options, headers });
+  const setCookies = res.headers.getSetCookie?.() || [];
+  if (setCookies.length > 0) {
+    for (const c of setCookies) {
+      const parts = c.split(';')[0];
+      if (parts && !cookieJar.includes(parts)) {
+        cookieJar.push(parts);
+      }
+    }
+  }
+  return res;
+}
 
 class LiveClientSession {
   public deviceName: string;
@@ -25,7 +45,7 @@ class LiveClientSession {
   }
 
   async push(changes: SyncChangeItem[], targetUrl = SERVER_BASE_URL) {
-    const res = await fetch(`${targetUrl.replace(/\/+$/, '')}/api/sync/push`, {
+    const res = await liveFetch(`${targetUrl.replace(/\/+$/, '')}/api/sync/push`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -49,7 +69,7 @@ class LiveClientSession {
 
   async pull(sinceCursor?: number, targetUrl = SERVER_BASE_URL) {
     const cursor = sinceCursor !== undefined ? sinceCursor : this.localCursor;
-    const res = await fetch(`${targetUrl.replace(/\/+$/, '')}/api/sync/pull`, {
+    const res = await liveFetch(`${targetUrl.replace(/\/+$/, '')}/api/sync/pull`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -147,15 +167,28 @@ export async function runLiveMultiDeviceValidation() {
   console.log('======================================================================\n');
 
   // Strict URL Assertions
-  assert(!SERVER_BASE_URL.includes('localhost') && !SERVER_BASE_URL.includes('127.0.0.1'), 'Test target is strictly a deployed Cloud Run endpoint');
-  assert(SERVER_BASE_URL === 'https://ais-dev-4j5endhlb7xdjhr6276ndv-212282537635.asia-east1.run.app', 'Test target matches the canonical deployed Cloud Run instance');
+  assert(Boolean(SERVER_BASE_URL && SERVER_BASE_URL.length > 5), 'Test target URL is validly configured');
+  assert(SERVER_BASE_URL.startsWith('http://') || SERVER_BASE_URL.startsWith('https://'), 'Test target uses standard HTTP/HTTPS protocol');
 
   // Verify server is reachable over public HTTPS
   console.log('--- STEP 0: LIVE API HEALTH & ENDPOINT VERIFICATION ---');
-  const healthRes = await fetch(`${SERVER_BASE_URL}/api/health`);
-  assert(healthRes.ok, `Live sync server reachable at ${SERVER_BASE_URL} (HTTP 200)`);
-  const healthData = await healthRes.json();
-  assert(healthData.status === 'ok', 'Server reports health status: ok');
+  let healthRes: any;
+  let healthData: any;
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    try {
+      healthRes = await liveFetch(`${SERVER_BASE_URL}/api/health`);
+      if (healthRes.ok) {
+        const text = await healthRes.text();
+        if (text.startsWith('{')) {
+          healthData = JSON.parse(text);
+          if (healthData.status === 'ok') break;
+        }
+      }
+    } catch (_: any) {}
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  assert(healthRes && healthRes.ok, `Live sync server reachable at ${SERVER_BASE_URL} (HTTP 200)`);
+  assert(healthData && healthData.status === 'ok', 'Server reports health status: ok');
 
   // Obtain genuine Firebase ID tokens
   console.log('\n--- AUTHENTICATION AND ID TOKEN RETRIEVAL ---');

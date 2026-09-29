@@ -15,6 +15,9 @@ interface BuyerDao {
     @Query("SELECT * FROM buyers WHERE id = :id")
     suspend fun getBuyerById(id: String): BuyerEntity?
 
+    @Query("SELECT * FROM buyers WHERE sync_state = 'PENDING_UPLOAD'")
+    suspend fun getPendingBuyers(): List<BuyerEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertBuyer(buyer: BuyerEntity)
 
@@ -23,6 +26,12 @@ interface BuyerDao {
 
     @Update
     suspend fun updateBuyer(buyer: BuyerEntity)
+
+    @Query("UPDATE buyers SET sync_state = :syncState, record_sync_version = :version, last_synced_at = :lastSyncedAt WHERE id = :id")
+    suspend fun updateSyncMetadata(id: String, syncState: String, version: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE buyers SET sync_state = :syncState WHERE id = :id")
+    suspend fun updateSyncState(id: String, syncState: String)
 
     @Query("DELETE FROM buyers")
     suspend fun deleteAll()
@@ -39,6 +48,9 @@ interface SupplierDao {
     @Query("SELECT * FROM suppliers WHERE id = :id")
     suspend fun getSupplierById(id: String): SupplierEntity?
 
+    @Query("SELECT * FROM suppliers WHERE sync_state = 'PENDING_UPLOAD'")
+    suspend fun getPendingSuppliers(): List<SupplierEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertSupplier(supplier: SupplierEntity)
 
@@ -47,6 +59,12 @@ interface SupplierDao {
 
     @Update
     suspend fun updateSupplier(supplier: SupplierEntity)
+
+    @Query("UPDATE suppliers SET sync_state = :syncState, record_sync_version = :version, last_synced_at = :lastSyncedAt WHERE id = :id")
+    suspend fun updateSyncMetadata(id: String, syncState: String, version: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE suppliers SET sync_state = :syncState WHERE id = :id")
+    suspend fun updateSyncState(id: String, syncState: String)
 
     @Query("DELETE FROM suppliers")
     suspend fun deleteAll()
@@ -66,6 +84,9 @@ interface SaleDao {
     @Query("SELECT * FROM sales WHERE buyerId = :buyerId ORDER BY date DESC")
     fun getSalesByBuyer(buyerId: String): Flow<List<SaleEntity>>
 
+    @Query("SELECT * FROM sales WHERE sync_state = 'PENDING_UPLOAD'")
+    suspend fun getPendingSales(): List<SaleEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertSale(sale: SaleEntity)
 
@@ -74,6 +95,12 @@ interface SaleDao {
 
     @Update
     suspend fun updateSale(sale: SaleEntity)
+
+    @Query("UPDATE sales SET sync_state = :syncState, record_sync_version = :version, last_synced_at = :lastSyncedAt WHERE id = :id")
+    suspend fun updateSyncMetadata(id: String, syncState: String, version: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE sales SET sync_state = :syncState WHERE id = :id")
+    suspend fun updateSyncState(id: String, syncState: String)
 
     @Query("DELETE FROM sales")
     suspend fun deleteAll()
@@ -99,6 +126,9 @@ interface PaymentDao {
     @Query("SELECT * FROM payments WHERE id = :id")
     suspend fun getPaymentById(id: String): PaymentEntity?
 
+    @Query("SELECT * FROM payments WHERE sync_state = 'PENDING_UPLOAD'")
+    suspend fun getPendingPayments(): List<PaymentEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPayment(payment: PaymentEntity)
 
@@ -107,6 +137,12 @@ interface PaymentDao {
 
     @Update
     suspend fun updatePayment(payment: PaymentEntity)
+
+    @Query("UPDATE payments SET sync_state = :syncState, record_sync_version = :version, last_synced_at = :lastSyncedAt WHERE id = :id")
+    suspend fun updateSyncMetadata(id: String, syncState: String, version: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE payments SET sync_state = :syncState WHERE id = :id")
+    suspend fun updateSyncState(id: String, syncState: String)
 
     @Query("DELETE FROM payments")
     suspend fun deleteAll()
@@ -123,6 +159,9 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses WHERE id = :id")
     suspend fun getExpenseById(id: String): ExpenseEntity?
 
+    @Query("SELECT * FROM expenses WHERE sync_state = 'PENDING_UPLOAD'")
+    suspend fun getPendingExpenses(): List<ExpenseEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertExpense(expense: ExpenseEntity)
 
@@ -131,6 +170,12 @@ interface ExpenseDao {
 
     @Update
     suspend fun updateExpense(expense: ExpenseEntity)
+
+    @Query("UPDATE expenses SET sync_state = :syncState, record_sync_version = :version, last_synced_at = :lastSyncedAt WHERE id = :id")
+    suspend fun updateSyncMetadata(id: String, syncState: String, version: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE expenses SET sync_state = :syncState WHERE id = :id")
+    suspend fun updateSyncState(id: String, syncState: String)
 
     @Query("DELETE FROM expenses")
     suspend fun deleteAll()
@@ -153,6 +198,9 @@ interface ExpensePaymentDao {
     @Query("SELECT * FROM expense_payments WHERE id = :id")
     suspend fun getExpensePaymentById(id: String): ExpensePaymentEntity?
 
+    @Query("SELECT * FROM expense_payments WHERE sync_state = 'PENDING_UPLOAD'")
+    suspend fun getPendingExpensePayments(): List<ExpensePaymentEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertExpensePayment(payment: ExpensePaymentEntity)
 
@@ -161,6 +209,12 @@ interface ExpensePaymentDao {
 
     @Update
     suspend fun updateExpensePayment(payment: ExpensePaymentEntity)
+
+    @Query("UPDATE expense_payments SET sync_state = :syncState, record_sync_version = :version, last_synced_at = :lastSyncedAt WHERE id = :id")
+    suspend fun updateSyncMetadata(id: String, syncState: String, version: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE expense_payments SET sync_state = :syncState WHERE id = :id")
+    suspend fun updateSyncState(id: String, syncState: String)
 
     @Query("DELETE FROM expense_payments")
     suspend fun deleteAll()
@@ -186,6 +240,15 @@ interface ProductionDao {
     @Query("SELECT * FROM production_cycles WHERE id = :id")
     suspend fun getCycleById(id: String): ProductionCycleEntity?
 
+    @Query("SELECT * FROM production_cycles WHERE sync_state = 'PENDING_UPLOAD'")
+    suspend fun getPendingCycles(): List<ProductionCycleEntity>
+
+    @Query("UPDATE production_cycles SET sync_state = :syncState, record_sync_version = :version, last_synced_at = :lastSyncedAt WHERE id = :id")
+    suspend fun updateCycleSyncMetadata(id: String, syncState: String, version: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE production_cycles SET sync_state = :syncState WHERE id = :id")
+    suspend fun updateCycleSyncState(id: String, syncState: String)
+
     @Query("DELETE FROM production_cycles")
     suspend fun deleteAllCycles()
 
@@ -201,6 +264,9 @@ interface ProductionDao {
     @Query("SELECT * FROM harvests WHERE cycleId = :cycleId")
     suspend fun getHarvestsByCycleIdSync(cycleId: String): List<HarvestEntity>
 
+    @Query("SELECT * FROM harvests WHERE sync_state = 'PENDING_UPLOAD'")
+    suspend fun getPendingHarvests(): List<HarvestEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertHarvest(harvest: HarvestEntity)
 
@@ -209,6 +275,12 @@ interface ProductionDao {
 
     @Update
     suspend fun updateHarvest(harvest: HarvestEntity)
+
+    @Query("UPDATE harvests SET sync_state = :syncState, record_sync_version = :version, last_synced_at = :lastSyncedAt WHERE id = :id")
+    suspend fun updateHarvestSyncMetadata(id: String, syncState: String, version: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE harvests SET sync_state = :syncState WHERE id = :id")
+    suspend fun updateHarvestSyncState(id: String, syncState: String)
 
     @Query("DELETE FROM harvests")
     suspend fun deleteAllHarvests()
@@ -222,11 +294,20 @@ interface AuditLogDao {
     @Query("SELECT * FROM audit_logs ORDER BY timestamp DESC")
     suspend fun getAllAuditLogsSync(): List<AuditLogEntity>
 
+    @Query("SELECT * FROM audit_logs WHERE sync_state = 'PENDING_UPLOAD'")
+    suspend fun getPendingAuditLogs(): List<AuditLogEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAuditLog(log: AuditLogEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(logs: List<AuditLogEntity>)
+
+    @Query("UPDATE audit_logs SET sync_state = :syncState, record_sync_version = :version, last_synced_at = :lastSyncedAt WHERE id = :id")
+    suspend fun updateSyncMetadata(id: String, syncState: String, version: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE audit_logs SET sync_state = :syncState WHERE id = :id")
+    suspend fun updateSyncState(id: String, syncState: String)
 
     @Query("DELETE FROM audit_logs")
     suspend fun deleteAll()

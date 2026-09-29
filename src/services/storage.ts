@@ -201,6 +201,7 @@ export const StorageService = {
   // One-time automatic migration of v1.0 localStorage data into native Room
   checkAndMigrateLegacyLocalStorage(bridge: any): void {
     try {
+      if (typeof localStorage === 'undefined') return;
       const migrationFlag = localStorage.getItem('farm_finance_native_migrated');
       if (migrationFlag === 'true') return;
 

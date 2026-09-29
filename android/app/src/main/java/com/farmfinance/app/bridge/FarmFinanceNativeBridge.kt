@@ -97,6 +97,9 @@ class FarmFinanceNativeBridge(
                             put("notes", b.notes)
                             put("createdDate", b.createdDate)
                             put("status", if (b.isActive) "ACTIVE" else "INACTIVE")
+                            put("sync_state", b.sync_state)
+                            put("record_sync_version", b.record_sync_version)
+                            put("last_synced_at", b.last_synced_at)
                         })
                     }
                 })
@@ -110,6 +113,9 @@ class FarmFinanceNativeBridge(
                             put("notes", s.notes)
                             put("createdDate", s.createdDate)
                             put("status", if (s.isActive) "ACTIVE" else "INACTIVE")
+                            put("sync_state", s.sync_state)
+                            put("record_sync_version", s.record_sync_version)
+                            put("last_synced_at", s.last_synced_at)
                         })
                     }
                 })
@@ -131,6 +137,9 @@ class FarmFinanceNativeBridge(
                             put("isVoided", s.isVoided)
                             put("createdAt", s.createdAt)
                             put("updatedAt", s.updatedAt)
+                            put("sync_state", s.sync_state)
+                            put("record_sync_version", s.record_sync_version)
+                            put("last_synced_at", s.last_synced_at)
                         })
                     }
                 })
@@ -147,6 +156,9 @@ class FarmFinanceNativeBridge(
                             put("notes", p.notes)
                             put("isVoided", p.isVoided)
                             put("createdAt", p.createdAt)
+                            put("sync_state", p.sync_state)
+                            put("record_sync_version", p.record_sync_version)
+                            put("last_synced_at", p.last_synced_at)
                         })
                     }
                 })
@@ -169,6 +181,9 @@ class FarmFinanceNativeBridge(
                             put("isVoided", e.isVoided)
                             put("createdAt", e.createdAt)
                             put("updatedAt", e.updatedAt)
+                            put("sync_state", e.sync_state)
+                            put("record_sync_version", e.record_sync_version)
+                            put("last_synced_at", e.last_synced_at)
                         })
                     }
                 })
@@ -185,6 +200,9 @@ class FarmFinanceNativeBridge(
                             put("notes", ep.notes)
                             put("isVoided", ep.isVoided)
                             put("createdAt", ep.createdAt)
+                            put("sync_state", ep.sync_state)
+                            put("record_sync_version", ep.record_sync_version)
+                            put("last_synced_at", ep.last_synced_at)
                         })
                     }
                 })
@@ -205,6 +223,9 @@ class FarmFinanceNativeBridge(
                             put("notes", c.notes)
                             put("createdAt", c.createdAt)
                             put("updatedAt", c.updatedAt)
+                            put("sync_state", c.sync_state)
+                            put("record_sync_version", c.record_sync_version)
+                            put("last_synced_at", c.last_synced_at)
                         })
                     }
                 })
@@ -222,6 +243,9 @@ class FarmFinanceNativeBridge(
                             put("buyerId", h.buyerId ?: JSONObject.NULL)
                             put("notes", h.notes)
                             put("createdAt", h.createdAt)
+                            put("sync_state", h.sync_state)
+                            put("record_sync_version", h.record_sync_version)
+                            put("last_synced_at", h.last_synced_at)
                         })
                     }
                 })
@@ -236,6 +260,9 @@ class FarmFinanceNativeBridge(
                             put("summary", a.summary)
                             put("metadataJson", a.metadataJson)
                             put("appVersion", a.appVersion)
+                            put("sync_state", a.sync_state)
+                            put("record_sync_version", a.record_sync_version)
+                            put("last_synced_at", a.last_synced_at)
                         })
                     }
                 })
@@ -1333,6 +1360,71 @@ class FarmFinanceNativeBridge(
             JSONObject().apply {
                 put("success", false)
                 put("error", "Migration failed: ${e.message}")
+            }.toString()
+        }
+    }
+
+    // ================= SYNC BRIDGE INTERFACES =================
+
+    @JavascriptInterface
+    fun getSyncCursor(): Long {
+        return com.farmfinance.app.sync.RoomSyncManager.getSyncCursor(context)
+    }
+
+    @JavascriptInterface
+    fun setSyncCursor(cursor: Long): Boolean {
+        com.farmfinance.app.sync.RoomSyncManager.setSyncCursor(context, cursor)
+        return true
+    }
+
+    @JavascriptInterface
+    fun getPendingSyncChanges(): String = runBlocking(Dispatchers.IO) {
+        try {
+            val changes = com.farmfinance.app.sync.RoomSyncManager.detectPendingChanges(db)
+            changes.toString()
+        } catch (e: Exception) {
+            "[]"
+        }
+    }
+
+    @JavascriptInterface
+    fun applySyncPushResults(resultsJson: String, newCursor: Long): String = runBlocking(Dispatchers.IO) {
+        try {
+            val resultsArr = JSONArray(resultsJson)
+            com.farmfinance.app.sync.RoomSyncManager.applyPushResults(db, resultsArr, newCursor, context)
+            JSONObject().apply { put("success", true) }.toString()
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Failed to apply sync push results")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun applySyncPullDataset(datasetJson: String, newCursor: Long): String = runBlocking(Dispatchers.IO) {
+        try {
+            val datasetObj = JSONObject(datasetJson)
+            com.farmfinance.app.sync.RoomSyncManager.applyPullDataset(db, datasetObj, newCursor, context)
+            JSONObject().apply { put("success", true) }.toString()
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Failed to apply sync pull dataset")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun applySyncPullChanges(changesJson: String, newCursor: Long): String = runBlocking(Dispatchers.IO) {
+        try {
+            val changesArr = JSONArray(changesJson)
+            com.farmfinance.app.sync.RoomSyncManager.applyPullChanges(db, changesArr, newCursor, context)
+            JSONObject().apply { put("success", true) }.toString()
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("success", false)
+                put("error", e.message ?: "Failed to apply sync pull changes")
             }.toString()
         }
     }
