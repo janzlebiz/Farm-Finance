@@ -10,7 +10,6 @@
 
 import { SyncPushRequest, SyncPullRequest, SyncChangeItem } from '../src/types/sync';
 import appletConfig from '../firebase-applet-config.json';
-import { adminAuth } from '../src/server/adminFirebase';
 
 export const SERVER_BASE_URL = 'https://ais-dev-4j5endhlb7xdjhr6276ndv-212282537635.asia-east1.run.app';
 
@@ -83,47 +82,44 @@ class LiveClientSession {
 }
 
 /**
- * Obtains a genuine Firebase ID token by creating a temporary user via Admin SDK
- * and signing in over Google Identity Toolkit REST API. No fake bearer or localhost fallbacks are permitted.
+ * Obtains a genuine Firebase ID token using Google Identity Toolkit IdP exchange
+ * with environment Google OAuth identity credentials. No fake bearer or localhost fallbacks are permitted.
  */
 async function getRealFirebaseIdToken(): Promise<string> {
-  const email = `live-test-${Date.now()}@farmfinance.ph`;
-  const password = 'securePassword123';
-
-  // Create real Firebase user account
-  const userRecord = await adminAuth.createUser({
-    email,
-    password
+  const audience = appletConfig.oAuthClientId || '236839907355-774mo5h3lqt4m2vsst5rehoj88caa4et.apps.googleusercontent.com';
+  const metaRes = await fetch(`http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${audience}`, {
+    headers: { 'Metadata-Flavor': 'Google' }
   });
+
+  if (!metaRes.ok) {
+    throw new Error(`Failed to fetch metadata identity token: HTTP ${metaRes.status}`);
+  }
+
+  const googleToken = (await metaRes.text()).trim();
 
   const apiKey = process.env.VITE_FIREBASE_API_KEY || appletConfig.apiKey;
   if (!apiKey) {
     throw new Error('Missing Firebase API Key for authenticating live validation');
   }
 
-  // Exchange for real Firebase ID Token
-  const signinUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
-  const response = await fetch(signinUrl, {
+  const idpRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, returnSecureToken: true })
+    body: JSON.stringify({
+      postBody: `id_token=${googleToken}&providerId=google.com`,
+      requestUri: 'http://localhost',
+      returnSecureToken: true
+    })
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to sign in live user via REST API: ${errorText}`);
+  if (!idpRes.ok) {
+    const errorText = await idpRes.text();
+    throw new Error(`Failed to exchange Google credential for Firebase ID token: ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = await idpRes.json();
   if (!data.idToken) {
     throw new Error('Firebase Auth API did not return a valid idToken');
-  }
-
-  // Attempt to delete user after obtaining token
-  try {
-    await adminAuth.deleteUser(userRecord.uid);
-  } catch (err) {
-    // Ignore cleanup errors
   }
 
   return data.idToken;
