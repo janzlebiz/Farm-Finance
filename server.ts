@@ -34,11 +34,6 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     req.userUid = decodedToken.uid;
     next();
   } catch (err) {
-    // In development or test execution, allow authenticated test bearer tokens
-    if (process.env.NODE_ENV !== 'production' && token.startsWith('test_bearer_')) {
-      req.userUid = token.replace('test_bearer_', '');
-      return next();
-    }
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
   }
 }
