@@ -21,13 +21,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let resolved = false;
     // Listen to Firebase persistent auth state changes
     const unsubscribe = AuthService.onAuthStateChanged((currentUser) => {
+      resolved = true;
       setUser(currentUser);
       setIsLoading(false);
     });
 
-    return () => unsubscribe();
+    // Safety timeout for WebView/offline environments where auth initialization might delay
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        setIsLoading(false);
+      }
+    }, 2500);
+
+    return () => {
+      resolved = true;
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   const clearError = () => setError(null);
