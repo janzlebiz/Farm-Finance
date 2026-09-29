@@ -47,28 +47,36 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const clearError = () => setError(null);
 
   const formatAuthError = (err: unknown): string => {
-    if (err && typeof err === 'object' && 'code' in err) {
-      const code = (err as { code: string }).code;
-      switch (code) {
-        case 'auth/invalid-email':
-          return 'Invalid email address format.';
-        case 'auth/user-disabled':
-          return 'This user account has been disabled.';
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-        case 'auth/invalid-credential':
-          return 'Invalid email or password.';
-        case 'auth/email-already-in-use':
-          return 'An account with this email already exists.';
-        case 'auth/weak-password':
-          return 'Password should be at least 6 characters.';
-        case 'auth/operation-not-allowed':
-          return 'Email/Password sign-in is not enabled in Firebase Console. You can sign in using Google or enable Email/Password in your Firebase Console under Authentication > Sign-in method.';
-        case 'auth/network-request-failed':
-          return 'Network connection failed. Please check your internet.';
-        default:
-          return (err as { message?: string }).message || 'Authentication failed. Please try again.';
+    if (err && typeof err === 'object') {
+      if ('code' in err) {
+        const code = (err as { code: string }).code;
+        switch (code) {
+          case 'auth/invalid-email':
+            return 'Invalid email address format.';
+          case 'auth/user-disabled':
+            return 'This user account has been disabled.';
+          case 'auth/user-not-found':
+          case 'auth/wrong-password':
+          case 'auth/invalid-credential':
+            return 'Invalid email or password.';
+          case 'auth/email-already-in-use':
+            return 'An account with this email already exists.';
+          case 'auth/weak-password':
+            return 'Password should be at least 6 characters.';
+          case 'auth/operation-not-allowed':
+            return 'Email/Password sign-in is not enabled in Firebase Console. You can sign in using Google or enable Email/Password in your Firebase Console under Authentication > Sign-in method.';
+          case 'auth/network-request-failed':
+            return 'Network connection failed. Please check your internet.';
+          default:
+            return (err as { message?: string }).message || 'Authentication failed. Please try again.';
+        }
       }
+      if ('message' in err) {
+        return (err as { message: string }).message;
+      }
+    }
+    if (typeof err === 'string') {
+      return err;
     }
     return 'An unexpected error occurred during authentication.';
   };

@@ -14,6 +14,7 @@ import { getFirebaseAuth } from './firebase';
 import { UserService, UserProfile } from './userService';
 import { SyncEngine } from './syncEngine';
 import { StorageService } from './storage';
+import { SyncClient } from './syncClient';
 
 export interface AuthState {
   user: User | null;
@@ -111,8 +112,9 @@ export const AuthService = {
 
     // Get fresh ID token for authenticated server request
     const token = await user.getIdToken(true);
+    const baseUrl = SyncClient.getBaseUrl();
 
-    const response = await fetch('/api/auth/delete-account', {
+    const response = await fetch(`${baseUrl}/api/auth/delete-account`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -43,6 +43,33 @@ async function createServer() {
   const PORT = Number(process.env.PORT) || 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
+  // Secure and robust CORS handling for Android WebViews & trusted web origins
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      const isAllowed =
+        origin === 'https://appassets.androidplatform.net' ||
+        /^https:\/\/[a-z0-9-]+\.asia-east1\.run\.app$/.test(origin) ||
+        /^https:\/\/[a-z0-9-]+\.run\.app$/.test(origin) ||
+        /^http:\/\/localhost(:\d+)?$/.test(origin);
+
+      if (isAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE');
+        res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+        res.setHeader('Access-Control-Max-Age', '86400');
+      }
+    } else {
+      // For direct API requests or where Origin header is omitted (e.g. legacy/testing)
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    }
+
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
   app.use(express.json({ limit: '10mb' }));
 
   // Health check

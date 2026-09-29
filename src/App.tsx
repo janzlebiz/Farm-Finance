@@ -113,7 +113,8 @@ function AppContent() {
   }, []);
 
   // Web/PWA Cloud Sync Integration
-  const { isSyncing, pendingCount, conflictCount } = useCloudSync(user, reloadData);
+  const cloudSync = useCloudSync(user, reloadData);
+  const { isSyncing, pendingCount, conflictCount } = cloudSync;
 
   useEffect(() => {
     reloadData();
@@ -314,6 +315,7 @@ function AppContent() {
         <AuthModal
           onClose={() => setIsAuthModalOpen(false)}
           onSyncComplete={reloadData}
+          cloudSync={cloudSync}
         />
       )}
 

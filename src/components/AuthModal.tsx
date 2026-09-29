@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useCloudSync } from '../hooks/useCloudSync';
+import { CloudSyncState } from '../hooks/useCloudSync';
 import { LogIn, UserPlus, LogOut, CheckCircle2, AlertCircle, Loader2, KeyRound, Mail, ShieldCheck, RefreshCw, Trash2 } from 'lucide-react';
 
 interface AuthModalProps {
   onClose: () => void;
   onSyncComplete?: () => void;
+  cloudSync: CloudSyncState;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, cloudSync }) => {
   const { user, isLoading, error, signIn, register, signInWithGoogle, signOut, deleteAccount, clearError } = useAuth();
-  const { isSyncing, lastSyncedAt, syncError, pendingCount, conflictCount, syncNow } = useCloudSync(user, onSyncComplete);
+  const { isSyncing, lastSyncedAt, syncError, pendingCount, conflictCount, syncNow } = cloudSync;
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -287,9 +288,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete })
                       </button>
                     </div>
 
-                    <p className="text-[11px] text-rose-800">
+                     <p className="text-[11px] text-rose-800">
                       This will permanently purge all cloud data under <code className="font-mono font-bold">/users/{user.uid}</code>, delete your Firebase Auth account, and clear local storage. This cannot be undone.
                     </p>
+
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-900 space-y-1">
+                      <p className="font-bold flex items-center gap-1">⚠️ Warning: Pending Uploads</p>
+                      <p>Any local records still marked <span className="font-bold">PENDING_UPLOAD</span> ({pendingCount} pending) will be permanently discarded as part of account deletion.</p>
+                    </div>
 
                     <div>
                       <label className="block text-[11px] font-semibold text-rose-900 mb-1">Recent Password (Re-authentication)</label>
@@ -317,7 +323,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete })
 
                     <button
                       type="submit"
-                      disabled={isLoading || confirmDeleteText !== 'DELETE'}
+                      disabled={isLoading || !deletePassword.trim() || confirmDeleteText !== 'DELETE'}
                       className="w-full py-2 px-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
                     >
                       {isLoading ? (
