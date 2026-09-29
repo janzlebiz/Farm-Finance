@@ -59,8 +59,8 @@ jobs:
           api-level: 30
           target: default
           arch: x86_64
-          force-avd-creation: false
+          force-avd-creation: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: ./android
-          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest
+          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest --stacktrace
