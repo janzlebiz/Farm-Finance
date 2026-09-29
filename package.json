@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
-    "build:android-assets": "VITE_SYNC_API_BASE_URL=https://ais-dev-4j5endhlb7xdjhr6276ndv-212282537635.asia-east1.run.app vite build && rm -rf android/app/src/main/assets/www/* && cp -r dist/* android/app/src/main/assets/www/",
+    "build:android-assets": "VITE_ANDROID_EMBEDDED=true VITE_SYNC_API_BASE_URL=https://ais-dev-4j5endhlb7xdjhr6276ndv-212282537635.asia-east1.run.app vite build && rm -rf android/app/src/main/assets/www/* && mkdir -p android/app/src/main/assets/www && cp -r dist/* android/app/src/main/assets/www/",
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",

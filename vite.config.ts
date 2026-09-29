@@ -5,12 +5,14 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
+  const isAndroidEmbedded = process.env.VITE_ANDROID_EMBEDDED === 'true';
+
   return {
     base: process.env.VITE_BASE_URL || './',
     plugins: [
       react(),
       tailwindcss(),
-      VitePWA({
+      !isAndroidEmbedded && VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
         manifest: {
@@ -51,7 +53,10 @@ export default defineConfig(() => {
           enabled: false,
         },
       }),
-    ],
+    ].filter(Boolean),
+    build: {
+      target: ['chrome60', 'es2015'],
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

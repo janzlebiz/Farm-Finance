@@ -2,11 +2,16 @@ package com.farmfinance.app
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -250,6 +255,42 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
             }
 
             webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    Log.d("FarmFinanceWV", "onPageStarted: $url")
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    Log.d("FarmFinanceWV", "onPageFinished: $url")
+                }
+
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: WebResourceError?
+                ) {
+                    super.onReceivedError(view, request, error)
+                    Log.e("FarmFinanceWV", "onReceivedError: ${request?.url} -> error code=${error?.errorCode}, desc=${error?.description}")
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: WebResourceResponse?
+                ) {
+                    super.onReceivedHttpError(view, request, errorResponse)
+                    Log.e("FarmFinanceWV", "onReceivedHttpError: ${request?.url} -> status=${errorResponse?.statusCode}")
+                }
+
+                override fun onRenderProcessGone(
+                    view: WebView?,
+                    detail: RenderProcessGoneDetail?
+                ): Boolean {
+                    Log.e("FarmFinanceWV", "onRenderProcessGone: didCrash=${detail?.didCrash()}")
+                    return super.onRenderProcessGone(view, detail)
+                }
+
                 override fun shouldInterceptRequest(
                     view: WebView,
                     request: WebResourceRequest
@@ -281,7 +322,14 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
                 }
             }
 
-            webChromeClient = WebChromeClient()
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                    consoleMessage?.let {
+                        Log.d("FarmFinanceJS", "[${it.messageLevel()}] ${it.sourceId()}:${it.lineNumber()} - ${it.message()}")
+                    }
+                    return true
+                }
+            }
 
             // Load local bundled web application
             loadUrl("https://appassets.androidplatform.net/assets/www/index.html")

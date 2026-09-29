@@ -8,7 +8,7 @@ import {
   User,
   NextOrObserver
 } from 'firebase/auth';
-import { auth } from './firebase';
+import { getFirebaseAuth } from './firebase';
 import { UserService, UserProfile } from './userService';
 import { SyncEngine } from './syncEngine';
 import { StorageService } from './storage';
@@ -24,6 +24,10 @@ export const AuthService = {
    * Sign in existing user with email and password
    */
   async signIn(email: string, password: string): Promise<User> {
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      throw new Error('Firebase Authentication is not available on this device.');
+    }
     const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
     // Ensure profile document is synchronized on sign in
     await UserService.createOrUpdateProfile(userCredential.user).catch((err) => {
@@ -36,6 +40,10 @@ export const AuthService = {
    * Register a new user with email and password and create their Firestore user document
    */
   async register(email: string, password: string): Promise<User> {
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      throw new Error('Firebase Authentication is not available on this device.');
+    }
     const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
     // Create the minimal user profile document at /users/{uid}
     await UserService.createOrUpdateProfile(userCredential.user).catch((err) => {
@@ -57,7 +65,10 @@ export const AuthService = {
     // Safely clear local Web IndexedDB / memory data and sync cursors
     StorageService.clearLocalUserData();
 
-    await firebaseSignOut(auth);
+    const auth = getFirebaseAuth();
+    if (auth) {
+      await firebaseSignOut(auth);
+    }
   },
 
   /**
@@ -65,7 +76,8 @@ export const AuthService = {
    * Requires recent re-authentication and never silently continues if cloud purge fails.
    */
   async deleteAccount(password?: string): Promise<void> {
-    const user = auth.currentUser;
+    const auth = getFirebaseAuth();
+    const user = auth ? auth.currentUser : null;
     if (!user) {
       throw new Error('No authenticated user found for account deletion.');
     }
@@ -103,13 +115,34 @@ export const AuthService = {
    * Get current authenticated user synchronously
    */
   getCurrentUser(): User | null {
-    return auth.currentUser;
+    const auth = getFirebaseAuth();
+    return auth ? auth.currentUser : null;
   },
 
   /**
-   * Subscribe to auth state changes (persisted session)
+   * Subscribe to auth state changes (persisted session).
+   * Safe against Firebase initialization failures.
    */
   onAuthStateChanged(observer: NextOrObserver<User | null>) {
-    return onAuthStateChanged(auth, observer);
+    try {
+      const auth = getFirebaseAuth();
+      if (!auth) {
+        if (typeof observer === 'function') {
+          observer(null);
+        } else if (observer && typeof observer.next === 'function') {
+          observer.next(null);
+        }
+        return () => {};
+      }
+      return onAuthStateChanged(auth, observer);
+    } catch (err) {
+      console.warn('[AuthService] onAuthStateChanged subscription failed:', err);
+      if (typeof observer === 'function') {
+        observer(null);
+      } else if (observer && typeof observer.next === 'function') {
+        observer.next(null);
+      }
+      return () => {};
+    }
   }
 };

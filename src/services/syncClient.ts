@@ -4,7 +4,7 @@ import {
   SyncPullRequest,
   SyncPullResponse
 } from '../types/sync';
-import { auth } from './firebase';
+import { getFirebaseAuth } from './firebase';
 
 let customBaseUrl: string | null = null;
 
@@ -40,7 +40,8 @@ export class SyncClient {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
     };
-    if (auth.currentUser) {
+    const auth = getFirebaseAuth();
+    if (auth && auth.currentUser) {
       try {
         const token = await auth.currentUser.getIdToken();
         headers['Authorization'] = `Bearer ${token}`;

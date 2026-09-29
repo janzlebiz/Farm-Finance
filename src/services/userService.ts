@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { getFirebaseDb } from './firebase';
 import { User } from 'firebase/auth';
 
 export interface UserProfile {
@@ -14,6 +14,8 @@ export const UserService = {
    * Retrieves the user profile document at /users/{uid}
    */
   async getUserProfile(uid: string): Promise<UserProfile | null> {
+    const db = getFirebaseDb();
+    if (!db) return null;
     const userRef = doc(db, 'users', uid);
     const snapshot = await getDoc(userRef);
     if (!snapshot.exists()) {
@@ -26,6 +28,10 @@ export const UserService = {
    * Creates or updates the user profile document at /users/{uid} upon registration/sign-in
    */
   async createOrUpdateProfile(user: User): Promise<UserProfile> {
+    const db = getFirebaseDb();
+    if (!db) {
+      throw new Error('Firestore is not available on this device.');
+    }
     const userRef = doc(db, 'users', user.uid);
     const now = new Date().toISOString();
 

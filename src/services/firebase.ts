@@ -25,17 +25,66 @@ export const firebaseConfig = {
   firestoreDatabaseId: getEnvVar('VITE_FIREBASE_DATABASE_ID') || appletConfig.firestoreDatabaseId || '(default)',
 };
 
-// Initialize Firebase App exactly once
-export const app: FirebaseApp = getApps().length === 0
-  ? initializeApp(firebaseConfig)
-  : getApp();
+let cachedApp: FirebaseApp | null = null;
+let cachedAuth: Auth | null = null;
+let cachedDb: Firestore | null = null;
+let initError: Error | null = null;
 
-// Initialize Auth instance
-export const auth: Auth = getAuth(app);
+/**
+ * Lazy, fail-safe accessor for Firebase App instance.
+ * Never throws at module load time.
+ */
+export const getFirebaseApp = (): FirebaseApp | null => {
+  if (cachedApp) return cachedApp;
+  if (initError) return null;
+  try {
+    if (getApps().length > 0) {
+      cachedApp = getApp();
+    } else {
+      if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+        console.warn('[Firebase] Incomplete Firebase configuration, skipping app initialization.');
+        return null;
+      }
+      cachedApp = initializeApp(firebaseConfig);
+    }
+    return cachedApp;
+  } catch (err: any) {
+    initError = err instanceof Error ? err : new Error(String(err));
+    console.error('[Firebase] Lazy app initialization failed:', err);
+    return null;
+  }
+};
 
-// Initialize Firestore instance with specific database ID if provisioned
-export const db: Firestore = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+/**
+ * Lazy, fail-safe accessor for Firebase Auth instance.
+ */
+export const getFirebaseAuth = (): Auth | null => {
+  if (cachedAuth) return cachedAuth;
+  const appInstance = getFirebaseApp();
+  if (!appInstance) return null;
+  try {
+    cachedAuth = getAuth(appInstance);
+    return cachedAuth;
+  } catch (err: any) {
+    console.error('[Firebase] Lazy auth initialization failed:', err);
+    return null;
+  }
+};
 
-export default app;
+/**
+ * Lazy, fail-safe accessor for Firestore instance.
+ */
+export const getFirebaseDb = (): Firestore | null => {
+  if (cachedDb) return cachedDb;
+  const appInstance = getFirebaseApp();
+  if (!appInstance) return null;
+  try {
+    cachedDb = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+      ? getFirestore(appInstance, firebaseConfig.firestoreDatabaseId)
+      : getFirestore(appInstance);
+    return cachedDb;
+  } catch (err: any) {
+    console.error('[Firebase] Lazy firestore initialization failed:', err);
+    return null;
+  }
+};
