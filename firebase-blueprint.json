@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Core identity and profile information for a farm owner.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "email": { "type": "string", "format": "email" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt", "updatedAt"]
+    },
+    "SyncMeta": {
+      "title": "Sync Metadata",
+      "description": "State tracking for monotonic sync cursors.",
+      "type": "object",
+      "properties": {
+        "current_cursor": { "type": "integer", "minimum": 0 },
+        "updated_at": { "type": "integer" }
+      },
+      "required": ["current_cursor"]
+    },
+    "SyncChangeLog": {
+      "title": "Sync Change Log",
+      "description": "Immutable record of an entity mutation for replay sync.",
+      "type": "object",
+      "properties": {
+        "cursor": { "type": "integer" },
+        "entityType": { "type": "string" },
+        "entityId": { "type": "string" },
+        "operation": { "type": "string" },
+        "record": { "type": "object" },
+        "timestamp": { "type": "integer" }
+      },
+      "required": ["cursor", "entityType", "entityId", "operation", "record", "timestamp"]
+    },
+    "BusinessRecord": {
+      "title": "Business Record",
+      "description": "Generic container for synchronized business entities (Sales, Expenses, etc).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "isVoided": { "type": "boolean" },
+        "status": { "type": "string" },
+        "sync_state": { "type": "string" },
+        "record_sync_version": { "type": "integer" },
+        "last_synced_at": { "type": "integer" }
+      },
+      "required": ["id", "isVoided", "sync_state", "record_sync_version"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile root document."
+    },
+    "/users/{userId}/_sync/meta": {
+      "schema": "SyncMeta",
+      "description": "Sync cursor tracking."
+    },
+    "/users/{userId}/_sync/change_log_{cursorId}": {
+      "schema": "SyncChangeLog",
+      "description": "Incremental change logs."
+    },
+    "/users/{userId}/business_data/{recordId}": {
+      "schema": "BusinessRecord",
+      "description": "Authoritative business data records."
+    }
+  }
+}

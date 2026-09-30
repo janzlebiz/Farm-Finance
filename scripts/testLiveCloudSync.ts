@@ -5,7 +5,7 @@ import { ServerSyncService } from '../src/server/syncService';
 import { setAdminDbForTesting, setAdminAuthForTesting } from '../src/server/adminFirebase';
 import { requireAuth, AuthenticatedRequest } from '../server';
 import { SyncChangeItem, SyncPushRequest, SyncPullRequest } from '../src/types/sync';
-import appletConfig from '../firebase-applet-config.json';
+import appletConfig from '../src/firebase-config.json';
 
 // Local storage mock for Node runner
 const mockLocalStorage: Record<string, string> = {};

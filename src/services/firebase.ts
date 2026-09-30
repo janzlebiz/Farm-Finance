@@ -1,28 +1,42 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
-import appletConfig from '../../firebase-applet-config.json';
+import appletConfig from '../firebase-config.json';
 
 // Helper to safely read environment variables across Vite and Node/test environments
 const getEnvVar = (key: string): string => {
+  let val = '';
   if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
-    return import.meta.env[key] as string;
+    val = import.meta.env[key] as string;
+  } else if (typeof process !== 'undefined' && process.env && process.env[key]) {
+    val = process.env[key] as string;
   }
-  if (typeof process !== 'undefined' && process.env && process.env[key]) {
-    return process.env[key] as string;
-  }
-  return '';
+  
+  // Guard against string "undefined" or "null"
+  if (val === 'undefined' || val === 'null') return '';
+  return val || '';
 };
 
-// Environment-based configuration with fallback to firebase-applet-config.json
+// Normalize config object
+const config = {
+  "projectId": "farm-finance-510206",
+  "appId": "1:592186513548:web:583a03466e1b398dc443a9",
+  "apiKey": "AIzaSyC9pYSiXe4J33dClvCUcnGO0tJM14hkp3g",
+  "authDomain": "farm-finance-510206.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-farmfinance-93149cfe-1ff5-4e4b-a384-aa96984b5b0f",
+  "storageBucket": "farm-finance-510206.firebasestorage.app",
+  "messagingSenderId": "592186513548"
+};
+console.log('[Firebase] Hardcoded config object updated for project: farm-finance-510206');
+
 export const firebaseConfig = {
-  apiKey: getEnvVar('VITE_FIREBASE_API_KEY') || appletConfig.apiKey || '',
-  authDomain: getEnvVar('VITE_FIREBASE_AUTH_DOMAIN') || appletConfig.authDomain || '',
-  projectId: getEnvVar('VITE_FIREBASE_PROJECT_ID') || appletConfig.projectId || '',
-  storageBucket: getEnvVar('VITE_FIREBASE_STORAGE_BUCKET') || appletConfig.storageBucket || '',
-  messagingSenderId: getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID') || appletConfig.messagingSenderId || '',
-  appId: getEnvVar('VITE_FIREBASE_APP_ID') || appletConfig.appId || '',
-  firestoreDatabaseId: getEnvVar('VITE_FIREBASE_DATABASE_ID') || appletConfig.firestoreDatabaseId || '(default)',
+  apiKey: config.apiKey || '',
+  authDomain: config.authDomain || '',
+  projectId: config.projectId || '',
+  storageBucket: config.storageBucket || '',
+  messagingSenderId: config.messagingSenderId || '',
+  appId: config.appId || '',
+  firestoreDatabaseId: config.firestoreDatabaseId || '(default)',
 };
 
 let cachedApp: FirebaseApp | null = null;
@@ -41,11 +55,13 @@ export const getFirebaseApp = (): FirebaseApp | null => {
     if (getApps().length > 0) {
       cachedApp = getApp();
     } else {
-      if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-        console.warn('[Firebase] Incomplete Firebase configuration, skipping app initialization.');
+      const { apiKey, projectId } = firebaseConfig;
+      if (!apiKey || !projectId || apiKey === 'undefined' || projectId === 'undefined') {
+        console.error('[Firebase] Critical: Incomplete or invalid Firebase configuration. API Key or Project ID is missing.');
         return null;
       }
       cachedApp = initializeApp(firebaseConfig);
+      console.log('[Firebase] App initialized successfully.');
     }
     return cachedApp;
   } catch (err: any) {

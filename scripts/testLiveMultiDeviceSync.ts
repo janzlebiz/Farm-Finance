@@ -9,7 +9,7 @@
  */
 
 import { SyncPushRequest, SyncPullRequest, SyncChangeItem } from '../src/types/sync';
-import appletConfig from '../firebase-applet-config.json';
+import appletConfig from '../src/firebase-config.json';
 
 export const SERVER_BASE_URL = process.env.LIVE_SERVER_URL || 'http://localhost:3000';
 

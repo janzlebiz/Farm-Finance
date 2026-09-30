@@ -1,12 +1,12 @@
 {
-  "projectId": "gen-lang-client-0427039673",
-  "appId": "1:236839907355:web:33d25488ef48fd3cb408be",
-  "apiKey": "AIzaSyDMDeJ88fQF9YZsEK7yBrBFRBMrwys_nmE",
-  "authDomain": "gen-lang-client-0427039673.firebaseapp.com",
+  "projectId": "farm-finance-510206",
+  "appId": "1:592186513548:web:583a03466e1b398dc443a9",
+  "apiKey": "AIzaSyC9pYSiXe4J33dClvCUcnGO0tJM14hkp3g",
+  "authDomain": "farm-finance-510206.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-farmfinance-93149cfe-1ff5-4e4b-a384-aa96984b5b0f",
-  "storageBucket": "gen-lang-client-0427039673.firebasestorage.app",
-  "messagingSenderId": "236839907355",
+  "storageBucket": "farm-finance-510206.firebasestorage.app",
+  "messagingSenderId": "592186513548",
   "measurementId": "",
-  "oAuthClientId": "236839907355-774mo5h3lqt4m2vsst5rehoj88caa4et.apps.googleusercontent.com",
+  "oAuthClientId": "592186513548-na9l53cqdfmbf0k87tanuub4a50iftc1.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

@@ -1,75 +1,66 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper function to check if user is authenticated
-    function isAuthenticated() {
+    // -------------------------------------------------------------------------
+    // REUSABLE HELPER PRIMITIVES
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    // Helper function to verify user is operating on their own document
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Helper function to validate user profile fields on create/update
-    function isValidUserProfile(userId) {
-      return request.resource.data.uid == userId
-        && request.resource.data.email is string
-        && request.resource.data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'email', 'createdAt', 'updatedAt']);
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Explicitly deny client access to all internal sync metadata, cursors, and logs
-    match /users/{userId}/_sync/{syncPath=**} {
-      allow read, write: if false;
+    // -------------------------------------------------------------------------
+    // ENTITY VALIDATION HELPERS
+    // -------------------------------------------------------------------------
+    
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['uid', 'email', 'createdAt', 'updatedAt']) &&
+             data.uid == request.auth.uid &&
+             data.email is string && data.email.size() <= 256 &&
+             data.createdAt is string &&
+             data.updatedAt is string;
     }
 
-    // User profile document: only the authenticated user can read or create/update their own profile
-    match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUserProfile(userId);
-      allow update: if isOwner(userId) 
-        && request.resource.data.uid == userId
-        && request.resource.data.email is string
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'email', 'createdAt', 'updatedAt']);
-      allow delete: if false;
-    }
+    // -------------------------------------------------------------------------
+    // COLLECTION MATCH BLOCKS
+    // -------------------------------------------------------------------------
 
-    // Deny all client access to business-data collections by default
-    match /sales/{document=**} {
-      allow read, write: if false;
-    }
-    match /payments/{document=**} {
-      allow read, write: if false;
-    }
-    match /expenses/{document=**} {
-      allow read, write: if false;
-    }
-    match /expense_payments/{document=**} {
-      allow read, write: if false;
-    }
-    match /buyers/{document=**} {
-      allow read, write: if false;
-    }
-    match /suppliers/{document=**} {
-      allow read, write: if false;
-    }
-    match /production_cycles/{document=**} {
-      allow read, write: if false;
-    }
-    match /harvests/{document=**} {
-      allow read, write: if false;
-    }
-    match /audit_logs/{document=**} {
-      allow read, write: if false;
-    }
-
-    // Fallback: Deny everything else by default
+    // Global default deny
     match /{document=**} {
       allow read, write: if false;
+    }
+
+    // User Profile & Sync Data
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow update: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      
+      // Sync subcollections
+      match /_sync/{metaDoc} {
+        // Only allow owner to read their own sync state for diagnostics/local hydration
+        allow read: if isOwner(userId);
+        // Write is typically mediated by Cloud Run (Admin SDK), but we allow owner for 
+        // local-first direct sync if the app evolves that way.
+        allow write: if isOwner(userId);
+      }
+
+      // Business Data subcollection
+      match /business_data/{recordId} {
+        // Owner has full read access to their business data
+        allow read: if isOwner(userId);
+        // Write is server-mediated (Admin SDK) to ensure monotonic versioning and change-logs
+        // But we allow read for client-side list/get.
+        allow write: if false; // Enforce server-side authoritative sync
+      }
     }
   }
 }
