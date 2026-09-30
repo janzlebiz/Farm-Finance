@@ -145,6 +145,11 @@ export const AuthService = {
 
     // Clear Android Room / Web local data ONLY after successful server-side cloud purge and auth deletion
     StorageService.clearLocalUserData();
+
+    // Clean up local client auth session if still attached
+    if (auth && auth.currentUser) {
+      await firebaseSignOut(auth).catch(() => {});
+    }
   },
 
   /**

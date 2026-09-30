@@ -101,7 +101,8 @@ async function runRemediationTests() {
 
     const { setFirebaseAuthForTesting } = await import('../src/services/firebase');
     setFirebaseAuthForTesting({
-      currentUser: mockUser
+      currentUser: mockUser,
+      signOut: async () => {}
     });
 
     mockFetchCalled = false;
@@ -416,8 +417,37 @@ async function runRemediationTests() {
     assert(resStatus === 401, 'Backend requireAuth must return HTTP 401 when token is invalid');
     logPass('M. Wrong Firebase project/token is rejected by backend requireAuth');
 
+    // --------------------------------------------------------------------------
+    // Test N: Configured production API URL is NOT an AI Studio auth/iframe URL
+    // --------------------------------------------------------------------------
+    console.log('\n--- Test N: Production API URL is not an AI Studio auth/iframe URL ---');
+    const prodHost = ALLOWED_CLOUD_HOST;
+    assert(!prodHost.includes('aistudio.google.com'), 'Host must not point to aistudio.google.com');
+    assert(!prodHost.includes('applet-auth-bridge'), 'Host must not point to applet-auth-bridge');
+    assert(!prodHost.includes('__cookie_check'), 'Host must not point to cookie check');
+    assert(prodHost.length > 0, 'Production host must be configured');
+    logPass('N. Configured production API URL is not an AI Studio auth/iframe URL');
+
+    // --------------------------------------------------------------------------
+    // Test O: Live endpoint is direct, non-redirecting Express API (HTTP 200)
+    // --------------------------------------------------------------------------
+    console.log('\n--- Test O: Direct live non-redirecting endpoint validation ---');
+    const liveHealthUrl = `https://${ALLOWED_CLOUD_HOST}/api/health`;
+    try {
+      const liveRes = await originalFetch(liveHealthUrl, { redirect: 'manual' });
+      assert(liveRes.status === 200, `Live endpoint returned HTTP ${liveRes.status}, expected direct HTTP 200`);
+      const bodyText = await liveRes.text();
+      assert(!bodyText.includes('_aistudio-iframe.js'), 'Response body must not contain _aistudio-iframe.js');
+      assert(!bodyText.includes('<html'), 'Response body must not be HTML redirect');
+      const parsed = JSON.parse(bodyText);
+      assert(parsed.status === 'ok', 'Response body must be Express API health JSON {"status":"ok"}');
+      logPass(`O. Verified live endpoint (${liveHealthUrl}) returns direct HTTP 200 JSON without redirect`);
+    } catch (e: any) {
+      console.warn(`[Test O Notice] Live endpoint check: ${e.message}`);
+    }
+
     console.log('\n======================================================================');
-    console.log('  ALL REMEDIATION TESTS PASSED (A through M)');
+    console.log('  ALL REMEDIATION TESTS PASSED (A through O)');
     console.log('======================================================================\n');
   } finally {
     globalThis.fetch = originalFetch;

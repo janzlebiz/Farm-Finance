@@ -20,20 +20,28 @@
     <script>
       // HMR is disabled in AI Studio iframe environment; filter out benign Vite HMR connection notices
       (function() {
-        const origError = console.error;
-        console.error = function(...args) {
-          if (typeof args[0] === 'string' && (args[0].includes('[vite]') || args[0].includes('WebSocket') || args[0].includes('vite-hmr'))) {
-            return;
-          }
-          origError.apply(console, args);
+        var isViteNotice = function(arg) {
+          if (!arg) return false;
+          var str = typeof arg === 'string' ? arg : (arg.message || String(arg));
+          return str.includes('[vite]') || str.includes('WebSocket') || str.includes('vite-hmr') || str.includes('ws://') || str.includes('wss://');
         };
-        const origWarn = console.warn;
-        console.warn = function(...args) {
-          if (typeof args[0] === 'string' && (args[0].includes('[vite]') || args[0].includes('WebSocket'))) {
-            return;
+        ['log', 'info', 'warn', 'error', 'debug'].forEach(function(method) {
+          var orig = console[method];
+          if (orig) {
+            console[method] = function() {
+              for (var i = 0; i < arguments.length; i++) {
+                if (isViteNotice(arguments[i])) return;
+              }
+              orig.apply(console, arguments);
+            };
           }
-          origWarn.apply(console, args);
-        };
+        });
+        window.addEventListener('error', function(e) {
+          if (e && (isViteNotice(e.message) || isViteNotice(e.filename))) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        }, true);
       })();
     </script>
     <style>
@@ -95,8 +103,8 @@
         to { transform: rotate(360deg); }
       }
     </style>
-    <script type="module" crossorigin src="./assets/index--WufUB76.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-C2Hshp9P.css">
+    <script type="module" crossorigin src="./assets/index-DI1gFLxz.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-SJRKfdwz.css">
   </head>
   <body>
     <div id="root">

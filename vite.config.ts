@@ -68,6 +68,7 @@ export default defineConfig(() => {
       allowedHosts: true as const,
       // HMR is disabled in AI Studio to prevent WebSocket errors in the iframe environment.
       hmr: false,
+      ws: false as any,
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },

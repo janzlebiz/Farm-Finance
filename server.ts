@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ServerSyncService } from './src/server/syncService';
 import { adminAuth, adminApp, adminDb } from './src/server/adminFirebase';
+import appletConfig from './firebase-applet-config.json';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -136,8 +137,33 @@ async function createServer() {
       const userUid = req.userUid!;
       // 1. Purge all user-owned Firestore data under /users/{uid}
       await ServerSyncService.purgeUserData(userUid);
+
       // 2. Delete Firebase Auth account only after cloud purge succeeds
-      await adminAuth.deleteUser(userUid);
+      try {
+        await adminAuth.deleteUser(userUid);
+      } catch (adminErr: any) {
+        console.warn('[DeleteAccount] adminAuth.deleteUser failed, attempting Identity Toolkit REST delete with user ID token:', adminErr.message);
+        const rawToken = req.headers.authorization?.startsWith('Bearer ')
+          ? req.headers.authorization.substring(7).trim()
+          : null;
+        if (rawToken && appletConfig.apiKey) {
+          const restRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${appletConfig.apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken: rawToken })
+          });
+          if (!restRes.ok) {
+            const errBody: any = await restRes.json().catch(() => ({}));
+            console.error('[DeleteAccount] Identity Toolkit REST delete response:', errBody);
+            if (errBody?.error?.message !== 'USER_NOT_FOUND') {
+              throw new Error(errBody?.error?.message || adminErr.message);
+            }
+          }
+        } else {
+          throw adminErr;
+        }
+      }
+
       res.json({ success: true, message: 'Account and cloud data successfully purged.' });
     } catch (err: any) {
       console.error('Error in /api/auth/delete-account:', err);
@@ -151,7 +177,8 @@ async function createServer() {
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
-        hmr: false
+        hmr: false,
+        ws: false as any
       },
       appType: 'custom'
     });
@@ -166,8 +193,8 @@ async function createServer() {
         template = await vite.transformIndexHtml(url, template);
         
         // Strip the Vite client script in dev mode to prevent WebSocket connection errors [vite]
-        // because HMR/WebSockets are often blocked in the AI Studio iframe environment.
-        template = template.replace(/<script type="module" src="\/@vite\/client"><\/script>/, '');
+        // because HMR/WebSockets are disabled in the AI Studio iframe environment.
+        template = template.replace(/<script\b[^>]*@vite\/client[^>]*><\/script>/gi, '');
         
         res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
       } catch (e: any) {

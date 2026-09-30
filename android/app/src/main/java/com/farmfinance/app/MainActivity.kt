@@ -237,9 +237,6 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
             // Register Authoritative Room Native Bridge
             addJavascriptInterface(nativeBridge, "FarmFinanceNative")
 
-            // Enable third-party cookies for CORS preflights and cross-origin compatibility
-            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
             // Secure default WebView settings; cloud API networking handled via native HTTPS bridge
             settings.apply {
                 javaScriptEnabled = true

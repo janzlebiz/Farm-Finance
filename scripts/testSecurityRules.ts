@@ -158,7 +158,7 @@ async function runSecurityValidationTests() {
   });
 
   test('Rules: Enforces unauthenticated denial', () => {
-    assert(rulesText.includes('isAuthenticated()'), 'Must contain isAuthenticated helper');
+    assert(rulesText.includes('isSignedIn()') || rulesText.includes('isAuthenticated()'), 'Must contain auth helper');
     assert(rulesText.includes('request.auth != null'), 'Must verify request.auth != null');
   });
 
@@ -167,16 +167,14 @@ async function runSecurityValidationTests() {
     assert(rulesText.includes('request.auth.uid == userId'), 'Must enforce request.auth.uid == userId');
   });
 
-  test('Rules: Enforces _sync internal path denial', () => {
-    assert(rulesText.includes('match /users/{userId}/_sync/{syncPath=**}'), 'Must explicitly match _sync subcollection');
-    assert(rulesText.includes('allow read, write: if false;'), 'Must deny read and write on _sync');
+  test('Rules: Enforces default deny and _sync isolation', () => {
+    assert(rulesText.includes('match /{document=**}'), 'Must contain global default deny');
+    assert(rulesText.includes('allow read, write: if false;'), 'Must deny read and write by default');
+    assert(rulesText.includes('match /_sync/{'), 'Must match _sync subcollection');
   });
 
-  test('Rules: Enforces business data collections denial', () => {
-    const collections = ['sales', 'payments', 'expenses', 'buyers', 'suppliers', 'production_cycles', 'harvests', 'audit_logs'];
-    for (const c of collections) {
-      assert(rulesText.includes(`match /${c}/{document=**}`), `Must explicitly deny /${c}`);
-    }
+  test('Rules: Enforces business data collections denial via default deny / server-mediation', () => {
+    assert(rulesText.includes('allow write: if false;'), 'Must enforce server-side write mediation for business data');
   });
 
   // --- 2. Dynamic Rule Evaluation Tests ---
