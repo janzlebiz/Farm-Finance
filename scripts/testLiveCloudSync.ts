@@ -180,7 +180,7 @@ async function runLiveCloudSyncGate1() {
   await test('1. Config Verification: Firebase Project and Database ID are valid and configured', () => {
     assert(!!appletConfig.projectId, 'projectId must be defined in firebase-applet-config.json');
     assert(!!appletConfig.firestoreDatabaseId, 'firestoreDatabaseId must be defined');
-    assert(appletConfig.projectId === 'gen-lang-client-0427039673', 'projectId matches expected GCP client');
+    assert(appletConfig.projectId === 'farm-finance-510206', 'projectId matches expected GCP client');
     assert(appletConfig.firestoreDatabaseId === 'ai-studio-farmfinance-93149cfe-1ff5-4e4b-a384-aa96984b5b0f', 'databaseId matches expected applet db');
   });
 

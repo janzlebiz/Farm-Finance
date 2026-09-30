@@ -112,19 +112,35 @@ export const AuthService = {
 
     // Get fresh ID token for authenticated server request
     const token = await user.getIdToken(true);
-    const baseUrl = SyncClient.getBaseUrl();
+    const isNativeAvailable = typeof window !== 'undefined' && 
+      Boolean((window as any).FarmFinanceNative?.nativeDeleteAccount);
 
-    const response = await fetch(`${baseUrl}/api/auth/delete-account`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+    if (isNativeAvailable) {
+      const rawRes = (window as any).FarmFinanceNative.nativeDeleteAccount(token);
+      let res: { success: boolean; status: number; body: string; error?: string };
+      try {
+        res = JSON.parse(rawRes);
+      } catch {
+        throw new Error('Account deletion failed: Invalid response from native bridge.');
       }
-    });
+      if (!res.success) {
+        throw new Error(res.error || `Account deletion failed on server (Status: ${res.status}).`);
+      }
+    } else {
+      const baseUrl = SyncClient.getBaseUrl();
 
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || 'Account deletion and cloud purge failed on server.');
+      const response = await fetch(`${baseUrl}/api/auth/delete-account`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Account deletion and cloud purge failed on server.');
+      }
     }
 
     // Clear Android Room / Web local data ONLY after successful server-side cloud purge and auth deletion

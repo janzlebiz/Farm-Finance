@@ -272,29 +272,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
       });
     }
 
-    // C - Auth Push
+    // C - Auth Push (Platform-aware: Native on Android, fetch on Web)
     if (hasUser && token) {
       try {
-        const resC = await fetch(`${baseUrl}/api/sync/push`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ userId: user.uid, changes: [] })
-        });
-        const resStatus = resC.status;
-        const pass = resStatus === 200;
-        setTestDetails(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            results: {
-              ...prev.results,
-              authPush: { status: pass ? 'PASS' : 'FAIL', result: `HTTP ${resStatus}` }
-            }
-          };
-        });
+        const isNative = typeof window !== 'undefined' && Boolean((window as any).FarmFinanceNative?.nativeSyncPush);
+        if (isNative) {
+          const raw = (window as any).FarmFinanceNative.nativeSyncPush(token, JSON.stringify({ userId: user.uid, changes: [] }));
+          const res = JSON.parse(raw);
+          const pass = res.status === 200 && res.success;
+          setTestDetails(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              results: {
+                ...prev.results,
+                authPush: { status: pass ? 'PASS' : 'FAIL', result: `Native HTTPS: HTTP ${res.status}${res.error ? ` | ${res.error}` : ''}` }
+              }
+            };
+          });
+        } else {
+          const resC = await fetch(`${baseUrl}/api/sync/push`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ userId: user.uid, changes: [] })
+          });
+          const resStatus = resC.status;
+          const pass = resStatus === 200;
+          setTestDetails(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              results: {
+                ...prev.results,
+                authPush: { status: pass ? 'PASS' : 'FAIL', result: `Web Fetch: HTTP ${resStatus}` }
+              }
+            };
+          });
+        }
       } catch (err: any) {
         setTestDetails(prev => {
           if (!prev) return null;
@@ -320,36 +337,65 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
       });
     }
 
-    // D - Auth Pull
+    // D - Auth Pull (Platform-aware: Native on Android, fetch on Web)
     if (hasUser && token) {
       try {
-        const resD = await fetch(`${baseUrl}/api/sync/pull`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ userId: user.uid, sinceCursor: 0 })
-        });
-        const resStatus = resD.status;
-        const pass = resStatus === 200;
-        
-        let pullInfo = `HTTP ${resStatus}`;
-        if (pass) {
-          const data = await resD.json();
-          pullInfo = `HTTP 200 | Size: ${JSON.stringify(data).length}B | Cursor: ${data.currentServerCursor} | Bootstrap: ${data.isBootstrap}`;
-        }
-
-        setTestDetails(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            results: {
-              ...prev.results,
-              authPull: { status: pass ? 'PASS' : 'FAIL', result: pullInfo }
+        const isNative = typeof window !== 'undefined' && Boolean((window as any).FarmFinanceNative?.nativeSyncPull);
+        if (isNative) {
+          const raw = (window as any).FarmFinanceNative.nativeSyncPull(token, JSON.stringify({ userId: user.uid, sinceCursor: 0 }));
+          const res = JSON.parse(raw);
+          const pass = res.status === 200 && res.success;
+          let pullInfo = `Native HTTPS: HTTP ${res.status}`;
+          if (pass && res.body) {
+            try {
+              const data = JSON.parse(res.body);
+              pullInfo = `Native HTTPS: HTTP 200 | Size: ${res.body.length}B | Cursor: ${data.currentServerCursor} | Bootstrap: ${data.isBootstrap}`;
+            } catch {
+              pullInfo = `Native HTTPS: HTTP 200 | Body OK`;
             }
-          };
-        });
+          } else if (res.error) {
+            pullInfo += ` | ${res.error}`;
+          }
+
+          setTestDetails(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              results: {
+                ...prev.results,
+                authPull: { status: pass ? 'PASS' : 'FAIL', result: pullInfo }
+              }
+            };
+          });
+        } else {
+          const resD = await fetch(`${baseUrl}/api/sync/pull`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ userId: user.uid, sinceCursor: 0 })
+          });
+          const resStatus = resD.status;
+          const pass = resStatus === 200;
+          
+          let pullInfo = `Web Fetch: HTTP ${resStatus}`;
+          if (pass) {
+            const data = await resD.json();
+            pullInfo = `Web Fetch: HTTP 200 | Size: ${JSON.stringify(data).length}B | Cursor: ${data.currentServerCursor} | Bootstrap: ${data.isBootstrap}`;
+          }
+
+          setTestDetails(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              results: {
+                ...prev.results,
+                authPull: { status: pass ? 'PASS' : 'FAIL', result: pullInfo }
+              }
+            };
+          });
+        }
       } catch (err: any) {
         setTestDetails(prev => {
           if (!prev) return null;
@@ -694,8 +740,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
                         { label: 'WV Same-Origin', key: 'wvSame' },
                         { label: 'WV Cross-Origin', key: 'wvCross' },
                         { label: 'NATIVE ANDROID HTTPS', key: 'nativeTest' },
-                        { label: 'Cloud Push (Auth)', key: 'authPush' },
-                        { label: 'Cloud Pull (Auth)', key: 'authPull' }
+                        { label: 'Native Auth Push', key: 'authPush' },
+                        { label: 'Native Auth Pull', key: 'authPull' }
                       ].map(test => {
                         const res = testDetails.results[test.key as keyof typeof testDetails.results];
                         const isPass = res.status === 'PASS';

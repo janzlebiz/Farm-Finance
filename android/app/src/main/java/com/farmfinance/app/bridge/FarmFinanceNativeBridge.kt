@@ -14,11 +14,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URL
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import javax.net.ssl.HttpsURLConnection
 
 /**
  * Authoritative Native Bridge connecting the WebView directly to Room SQLite.
@@ -43,6 +45,111 @@ class FarmFinanceNativeBridge(
 
     var backupRestoreHandler: BackupRestoreHandler? = null
     var csvExportHandler: CsvExportHandler? = null
+
+    companion object {
+        const val ALLOWED_CLOUD_HOST = "ais-dev-4j5endhlb7xdjhr6276ndv-212282537635.asia-east1.run.app"
+        val ALLOWED_PATHS = setOf(
+            "/api/health",
+            "/api/sync/push",
+            "/api/sync/pull",
+            "/api/auth/delete-account"
+        )
+    }
+
+    private fun executeAuthenticatedPost(
+        path: String,
+        idToken: String,
+        bodyJson: String
+    ): String = runBlocking(Dispatchers.IO) {
+        val result = JSONObject()
+        try {
+            if (!ALLOWED_PATHS.contains(path)) {
+                result.put("success", false)
+                result.put("status", 400)
+                result.put("body", "")
+                result.put("error", "SECURITY_VIOLATION: Path '$path' is not in the allowlist.")
+                return@runBlocking result.toString()
+            }
+            if (idToken.isBlank()) {
+                result.put("success", false)
+                result.put("status", 401)
+                result.put("body", "")
+                result.put("error", "AUTHENTICATION_ERROR: Missing or empty ID token.")
+                return@runBlocking result.toString()
+            }
+
+            val targetUrl = "https://$ALLOWED_CLOUD_HOST$path"
+            val url = URL(targetUrl)
+
+            if (url.protocol != "https" || url.host != ALLOWED_CLOUD_HOST) {
+                result.put("success", false)
+                result.put("status", 400)
+                result.put("body", "")
+                result.put("error", "SECURITY_VIOLATION: Non-HTTPS or unauthorized host rejected.")
+                return@runBlocking result.toString()
+            }
+
+            val connection = (url.openConnection() as HttpsURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 15000
+                readTimeout = 15000
+                doInput = true
+                doOutput = true
+                instanceFollowRedirects = false // Prevent arbitrary host redirects
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Authorization", "Bearer $idToken")
+                setRequestProperty("Accept", "application/json")
+            }
+
+            connection.outputStream.use { os ->
+                val inputBytes = bodyJson.toByteArray(Charsets.UTF_8)
+                os.write(inputBytes, 0, inputBytes.size)
+                os.flush()
+            }
+
+            val responseCode = connection.responseCode
+            val responseBody = try {
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } catch (e: Exception) {
+                connection.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+            }
+
+            result.put("success", responseCode in 200..299)
+            result.put("status", responseCode)
+            result.put("body", responseBody)
+            if (responseCode !in 200..299) {
+                result.put("error", "HTTP $responseCode: $responseBody")
+            } else {
+                result.put("error", "")
+            }
+        } catch (e: Exception) {
+            result.put("success", false)
+            result.put("status", 0)
+            result.put("body", "")
+            result.put("error", e.message ?: e.javaClass.simpleName)
+        }
+        result.toString()
+    }
+
+    @JavascriptInterface
+    fun nativeSyncPush(idToken: String, payloadJson: String): String {
+        return executeAuthenticatedPost("/api/sync/push", idToken, payloadJson)
+    }
+
+    @JavascriptInterface
+    fun nativeSyncPull(idToken: String, payloadJson: String): String {
+        return executeAuthenticatedPost("/api/sync/pull", idToken, payloadJson)
+    }
+
+    @JavascriptInterface
+    fun nativeDeleteAccount(idToken: String): String {
+        return executeAuthenticatedPost("/api/auth/delete-account", idToken, "{}")
+    }
+
+    @JavascriptInterface
+    fun nativeAuthenticatedPost(path: String, idToken: String, bodyJson: String): String {
+        return executeAuthenticatedPost(path, idToken, bodyJson)
+    }
 
     @JavascriptInterface
     fun isAvailable(): Boolean = true
@@ -77,13 +184,23 @@ class FarmFinanceNativeBridge(
         val result = JSONObject()
         try {
             android.util.Log.d("FarmFinanceNative", "WEBVIEW_NETWORK_TEST_START: $urlStr")
-            val url = java.net.URL(urlStr)
-            val connection = (url.openConnection() as java.net.HttpURLConnection).apply {
+            val url = URL(urlStr)
+
+            // Native URL allowlist verification
+            if (url.protocol != "https" || url.host != ALLOWED_CLOUD_HOST || url.path != "/api/health") {
+                result.put("success", false)
+                result.put("status", 400)
+                result.put("body", "")
+                result.put("error", "SECURITY_VIOLATION: Only https://$ALLOWED_CLOUD_HOST/api/health is permitted.")
+                return@runBlocking result.toString()
+            }
+
+            val connection = (url.openConnection() as HttpsURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 10000
                 readTimeout = 10000
                 doInput = true
-                instanceFollowRedirects = true
+                instanceFollowRedirects = false
             }
             
             val responseCode = connection.responseCode
@@ -93,7 +210,7 @@ class FarmFinanceNativeBridge(
                 connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "No response body"
             }
             
-            result.put("success", true)
+            result.put("success", responseCode in 200..299)
             result.put("status", responseCode)
             result.put("body", responseBody)
             result.put("dns_success", true)
@@ -104,6 +221,7 @@ class FarmFinanceNativeBridge(
             result.put("success", false)
             result.put("exception", e.javaClass.simpleName)
             result.put("message", e.message ?: "Unknown error")
+            result.put("error", e.message ?: "Unknown error")
             
             if (e is java.net.UnknownHostException) result.put("dns_failed", true)
             if (e is javax.net.ssl.SSLException) result.put("tls_failed", true)

@@ -87,6 +87,10 @@ export const getFirebaseAuth = (): Auth | null => {
   }
 };
 
+export const setFirebaseAuthForTesting = (auth: any) => {
+  cachedAuth = auth;
+};
+
 /**
  * Lazy, fail-safe accessor for Firestore instance.
  */

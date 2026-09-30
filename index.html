@@ -17,6 +17,25 @@
     <meta property="og:description" content="Production-oriented mobile financial and production tracking application for rice and copra farm businesses." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // HMR is disabled in AI Studio iframe environment; filter out benign Vite HMR connection notices
+      (function() {
+        const origError = console.error;
+        console.error = function(...args) {
+          if (typeof args[0] === 'string' && (args[0].includes('[vite]') || args[0].includes('WebSocket') || args[0].includes('vite-hmr'))) {
+            return;
+          }
+          origError.apply(console, args);
+        };
+        const origWarn = console.warn;
+        console.warn = function(...args) {
+          if (typeof args[0] === 'string' && (args[0].includes('[vite]') || args[0].includes('WebSocket'))) {
+            return;
+          }
+          origWarn.apply(console, args);
+        };
+      })();
+    </script>
     <style>
       html, body {
         margin: 0;

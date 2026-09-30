@@ -240,16 +240,16 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
             // Enable third-party cookies for CORS preflights and cross-origin compatibility
             android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
-            // Hardened WebView settings with specific cross-origin enablement
+            // Secure default WebView settings; cloud API networking handled via native HTTPS bridge
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
                 databaseEnabled = false // Deprecated Web SQL disabled
-                allowFileAccess = true // Needed for some AssetLoader scenarios
-                allowContentAccess = true
-                allowFileAccessFromFileURLs = true
-                allowUniversalAccessFromFileURLs = true
-                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                allowFileAccess = false
+                allowContentAccess = false
+                allowFileAccessFromFileURLs = false
+                allowUniversalAccessFromFileURLs = false
+                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 setSupportZoom(false)
