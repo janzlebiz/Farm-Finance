@@ -18,23 +18,28 @@ export interface AuthenticatedRequest extends Request {
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log('[AuthDebug] Missing or invalid authorization header:', authHeader);
     return res.status(401).json({ error: 'Unauthorized: Missing or invalid authentication token' });
   }
 
   const token = authHeader.split('Bearer ')[1]?.trim();
   if (!token) {
+    console.log('[AuthDebug] Missing token after Bearer');
     return res.status(401).json({ error: 'Unauthorized: Missing or invalid authentication token' });
   }
 
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);
     if (!decodedToken || !decodedToken.uid) {
+      console.log('[AuthDebug] Invalid token claims:', decodedToken);
       return res.status(401).json({ error: 'Unauthorized: Invalid token claims' });
     }
     req.userUid = decodedToken.uid;
+    console.log('[AuthDebug] Successful auth for UID:', decodedToken.uid);
     next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+  } catch (err: any) {
+    console.log('[AuthDebug] Token verification failed:', err.message);
+    return res.status(401).json({ error: `Unauthorized: Invalid or expired token: ${err.message}` });
   }
 }
 
