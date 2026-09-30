@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DateFilterType } from '../types';
+import { DateFilterType, Sale, Payment, Expense } from '../types';
 import { StorageService } from '../services/storage';
 import { MoneyUtils } from '../utils/money';
 import {
@@ -16,6 +16,9 @@ import {
 } from 'lucide-react';
 
 interface DashboardTabProps {
+  sales?: Sale[];
+  payments?: Payment[];
+  expenses?: Expense[];
   onOpenNewSale: () => void;
   onOpenNewExpense: () => void;
   onNavigateToTab: (tab: string) => void;
@@ -23,6 +26,9 @@ interface DashboardTabProps {
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({
+  sales,
+  payments,
+  expenses,
   onOpenNewSale,
   onOpenNewExpense,
   onNavigateToTab,
@@ -32,11 +38,22 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
 
-  const metrics = StorageService.calculateMetrics(dateFilter, customStart, customEnd);
+  const activeSales = sales ?? StorageService.getSales();
+  const activePayments = payments ?? StorageService.loadDatabase().payments;
+  const activeExpenses = expenses ?? StorageService.getExpenses();
+
+  const metrics = StorageService.calculateMetricsFromData(
+    activeSales,
+    activePayments,
+    activeExpenses,
+    dateFilter,
+    customStart,
+    customEnd
+  );
   const netCashFlowCentavos = metrics.cashReceivedCentavos - metrics.cashPaidCentavos;
 
-  const globalSales = StorageService.getSales().filter((s) => !s.isVoided);
-  const globalExpenses = StorageService.getExpenses().filter((e) => !e.isVoided);
+  const globalSales = activeSales.filter((s) => !s.isVoided);
+  const globalExpenses = activeExpenses.filter((e) => !e.isVoided);
   const isGloballyEmpty = globalSales.length === 0 && globalExpenses.length === 0;
 
   return (

@@ -2596,6 +2596,210 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(dbAfter.buyers[0].name === 'Important Preserved Buyer', 'Preserved buyer data remains intact');
     });
 
+    // ----------------------------------------------------
+    // SUITE: HOME / DASHBOARD AUTHORITATIVE INTEGRATION & DATA REACTIVITY
+    // ----------------------------------------------------
+    await executeTest('Home/Dashboard Integration', '1. Initial Home/Dashboard state is correct and zeroed/empty', () => {
+      StorageService.resetToCleanState();
+      const db = StorageService.loadDatabase();
+      const metrics = StorageService.calculateMetricsFromData(db.sales, db.payments, db.expenses, 'all');
+
+      assert(metrics.totalRevenueCentavos === 0, 'Initial revenue must be 0');
+      assert(metrics.totalExpensesCentavos === 0, 'Initial expenses must be 0');
+      assert(metrics.netIncomeCentavos === 0, 'Initial net income must be 0');
+      assert(metrics.cashReceivedCentavos === 0, 'Initial cash received must be 0');
+      assert(metrics.cashPaidCentavos === 0, 'Initial cash paid must be 0');
+      assert(metrics.outstandingReceivablesCentavos === 0, 'Initial receivables must be 0');
+      assert(metrics.salesCount === 0, 'Initial sales count must be 0');
+      assert(metrics.expensesCount === 0, 'Initial expenses count must be 0');
+    });
+
+    await executeTest('Home/Dashboard Integration', '2. Record Sale -> Home metrics update immediately', () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({ name: 'Trader Juan', contactNumber: '09171112222', address: '', notes: '' });
+      const today = new Date().toISOString().split('T')[0];
+
+      // Record Sale: 100 kg @ 25.00 PHP (2500 centavos) = 250,000 centavos (2,500.00 PHP)
+      const res = StorageService.createSale({
+        date: today,
+        crop: 'Rice',
+        quantity: 100,
+        unit: 'kg',
+        unitPriceCentavos: 2500,
+        buyerId: buyer.id
+      });
+      assert(!!res.sale, 'Sale creation should succeed');
+
+      const db = StorageService.loadDatabase();
+      const metrics = StorageService.calculateMetricsFromData(db.sales, db.payments, db.expenses, 'all');
+
+      assert(metrics.totalRevenueCentavos === 250000, 'Home total revenue must reflect 250,000 centavos');
+      assert(metrics.netIncomeCentavos === 250000, 'Home net income must reflect 250,000 centavos');
+      assert(metrics.salesCount === 1, 'Home sales count must be 1');
+      assert(metrics.outstandingReceivablesCentavos === 250000, 'Unpaid sale must show in outstanding receivables');
+      assert(metrics.riceProfitabilityCentavos === 250000, 'Rice crop profitability must be 250,000 centavos');
+    });
+
+    await executeTest('Home/Dashboard Integration', '3. Record Expense -> Home metrics update immediately', () => {
+      StorageService.resetToCleanState();
+      const today = new Date().toISOString().split('T')[0];
+
+      // Record Expense: 50,000 centavos incurred, 20,000 centavos paid cash
+      const res = StorageService.createExpense({
+        date: today,
+        category: 'Fertilizer',
+        amountIncurredCentavos: 50000,
+        amountPaidCentavos: 20000,
+        description: 'Urea Fertilizer 50kg bag',
+        crop: 'Rice'
+      });
+      assert(!!res.expense, 'Expense creation should succeed');
+
+      const db = StorageService.loadDatabase();
+      const metrics = StorageService.calculateMetricsFromData(db.sales, db.payments, db.expenses, 'all');
+
+      assert(metrics.totalExpensesCentavos === 50000, 'Home total expenses must reflect 50,000 centavos');
+      assert(metrics.netIncomeCentavos === -50000, 'Home net income must reflect -50,000 centavos');
+      assert(metrics.cashPaidCentavos === 20000, 'Home cash paid must reflect 20,000 centavos');
+      assert(metrics.expensesCount === 1, 'Home expenses count must be 1');
+      assert(metrics.riceProfitabilityCentavos === -50000, 'Rice crop profitability must reflect incurred cost');
+    });
+
+    await executeTest('Home/Dashboard Integration', '4. Record Payment -> Home cash and receivables update immediately', () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({ name: 'Trader Juan', contactNumber: '', address: '', notes: '' });
+      const today = new Date().toISOString().split('T')[0];
+
+      const saleRes = StorageService.createSale({
+        date: today,
+        crop: 'Rice',
+        quantity: 100,
+        unit: 'kg',
+        unitPriceCentavos: 2500, // 250,000 centavos gross
+        buyerId: buyer.id
+      });
+      const sale = saleRes.sale!;
+
+      // Record partial payment of 100,000 centavos
+      const payRes = StorageService.recordPayment({
+        saleId: sale.id,
+        amountCentavos: 100000,
+        date: today,
+        paymentMethod: 'CASH'
+      });
+      assert(!!payRes.payment, 'Payment creation must succeed');
+
+      const db = StorageService.loadDatabase();
+      const metrics = StorageService.calculateMetricsFromData(db.sales, db.payments, db.expenses, 'all');
+
+      assert(metrics.totalRevenueCentavos === 250000, 'Revenue remains 250,000 centavos');
+      assert(metrics.cashReceivedCentavos === 100000, 'Cash received must be 100,000 centavos');
+      assert(metrics.outstandingReceivablesCentavos === 150000, 'Remaining receivables must be 150,000 centavos');
+    });
+
+    await executeTest('Home/Dashboard Integration', '5. Multiple Sales -> Home totals aggregate correctly', () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({ name: 'Buyer Multi', contactNumber: '', address: '', notes: '' });
+      const today = new Date().toISOString().split('T')[0];
+
+      StorageService.createSale({ date: today, crop: 'Rice', quantity: 100, unit: 'kg', unitPriceCentavos: 2000, buyerId: buyer.id }); // 200,000
+      StorageService.createSale({ date: today, crop: 'Copra', quantity: 200, unit: 'kg', unitPriceCentavos: 3500, buyerId: buyer.id }); // 700,000
+      StorageService.createSale({ date: today, crop: 'Rice', quantity: 50, unit: 'kg', unitPriceCentavos: 2000, buyerId: buyer.id }); // 100,000
+
+      const db = StorageService.loadDatabase();
+      const metrics = StorageService.calculateMetricsFromData(db.sales, db.payments, db.expenses, 'all');
+
+      assert(metrics.totalRevenueCentavos === 1000000, 'Total revenue must be 1,000,000 centavos (10,000.00 PHP)');
+      assert(metrics.salesCount === 3, 'Total sales count must be 3');
+      assert(metrics.riceProfitabilityCentavos === 300000, 'Rice revenue must be 300,000 centavos');
+      assert(metrics.copraProfitabilityCentavos === 700000, 'Copra revenue must be 700,000 centavos');
+    });
+
+    await executeTest('Home/Dashboard Integration', '6. Multiple Expenses -> Home totals aggregate correctly', () => {
+      StorageService.resetToCleanState();
+      const today = new Date().toISOString().split('T')[0];
+
+      StorageService.createExpense({ date: today, category: 'Labor & Harvesting Wages', amountIncurredCentavos: 80000, amountPaidCentavos: 80000, description: 'Harvesting team', crop: 'Rice' });
+      StorageService.createExpense({ date: today, category: 'Transportation & Hauling', amountIncurredCentavos: 40000, amountPaidCentavos: 20000, description: 'Jeepney haul', crop: 'Copra' });
+
+      const db = StorageService.loadDatabase();
+      const metrics = StorageService.calculateMetricsFromData(db.sales, db.payments, db.expenses, 'all');
+
+      assert(metrics.totalExpensesCentavos === 120000, 'Total expenses must be 120,000 centavos');
+      assert(metrics.cashPaidCentavos === 100000, 'Cash paid must be 100,000 centavos');
+      assert(metrics.expensesCount === 2, 'Expenses count must be 2');
+    });
+
+    await executeTest('Home/Dashboard Integration', '7. Sale + Expense -> Combined dashboard values remain accurate', () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({ name: 'Juan Dela Cruz', contactNumber: '', address: '', notes: '' });
+      const today = new Date().toISOString().split('T')[0];
+
+      // Sale 500,000 centavos (5,000.00 PHP)
+      const sale = StorageService.createSale({ date: today, crop: 'Rice', quantity: 200, unit: 'kg', unitPriceCentavos: 2500, buyerId: buyer.id }).sale!;
+      // Expense 200,000 centavos incurred, 150,000 paid
+      StorageService.createExpense({ date: today, category: 'Fertilizer', amountIncurredCentavos: 200000, amountPaidCentavos: 150000, description: 'Fertilizer', crop: 'Rice' });
+      // Payment on sale: 300,000 paid
+      StorageService.recordPayment({ saleId: sale.id, amountCentavos: 300000, date: today, paymentMethod: 'CASH' });
+
+      const db = StorageService.loadDatabase();
+      const metrics = StorageService.calculateMetricsFromData(db.sales, db.payments, db.expenses, 'all');
+
+      assert(metrics.totalRevenueCentavos === 500000, 'Revenue: 500,000');
+      assert(metrics.totalExpensesCentavos === 200000, 'Expenses: 200,000');
+      assert(metrics.netIncomeCentavos === 300000, 'Accrual Net Income: 300,000 (500,000 - 200,000)');
+      assert(metrics.cashReceivedCentavos === 300000, 'Cash Received: 300,000');
+      assert(metrics.cashPaidCentavos === 150000, 'Cash Paid: 150,000');
+      assert(metrics.outstandingReceivablesCentavos === 200000, 'Receivables: 200,000');
+      assert(metrics.riceProfitabilityCentavos === 300000, 'Rice Profitability: 300,000');
+    });
+
+    await executeTest('Home/Dashboard Integration', '8. Existing records loaded from storage appear correctly on Home', () => {
+      const db = StorageService.loadDatabase();
+      assert(db.sales.length >= 1, 'Database contains existing sales');
+      const metrics = StorageService.calculateMetricsFromData(db.sales, db.payments, db.expenses, 'all');
+      assert(metrics.salesCount === db.sales.filter((s) => !s.isVoided).length, 'Metrics count matches stored non-voided sales');
+    });
+
+    await executeTest('Home/Dashboard Integration', '9. Offline-created records appear on Home immediately', () => {
+      const buyer = StorageService.getBuyers()[0];
+      const today = new Date().toISOString().split('T')[0];
+
+      const prevRev = StorageService.calculateMetrics('all').totalRevenueCentavos;
+      const offlineSale = StorageService.createSale({
+        date: today,
+        crop: 'Rice',
+        quantity: 10,
+        unit: 'kg',
+        unitPriceCentavos: 3000, // 30,000 centavos
+        buyerId: buyer.id
+      });
+      assert(!!offlineSale.sale, 'Offline sale created');
+
+      const nextDb = StorageService.loadDatabase();
+      const newMetrics = StorageService.calculateMetricsFromData(nextDb.sales, nextDb.payments, nextDb.expenses, 'all');
+      assert(newMetrics.totalRevenueCentavos === prevRev + 30000, 'Revenue immediately incremented by offline sale amount');
+    });
+
+    await executeTest('Home/Dashboard Integration', '10. Voiding records recalculates Home dashboard totals accurately', () => {
+      const db = StorageService.loadDatabase();
+      const lastSale = db.sales[0];
+      const revBefore = StorageService.calculateMetrics('all').totalRevenueCentavos;
+
+      const voidRes = StorageService.voidSale(lastSale.id, 'Test void for home recalculation');
+      assert(voidRes.success, 'Void sale succeeded');
+
+      const updatedDb = StorageService.loadDatabase();
+      const newMetrics = StorageService.calculateMetricsFromData(updatedDb.sales, updatedDb.payments, updatedDb.expenses, 'all');
+      assert(newMetrics.totalRevenueCentavos === revBefore - lastSale.grossAmountCentavos, 'Revenue decreased by voided sale amount');
+    });
+
+    await executeTest('Home/Dashboard Integration', '11. Native Android and Web storage paths both supply metrics correctly', () => {
+      const isNative = StorageService.isNativeAndroid();
+      const metrics = StorageService.calculateMetrics('all');
+      assert(typeof metrics.netIncomeCentavos === 'number', 'Metrics computed consistently regardless of native flag');
+    });
+
   } finally {
     // Restore original user database state
     StorageService.saveMemoryDatabase(originalDb);

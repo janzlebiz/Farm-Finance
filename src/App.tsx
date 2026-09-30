@@ -118,7 +118,21 @@ function AppContent() {
 
   useEffect(() => {
     reloadData();
+    if (typeof window !== 'undefined') {
+      const handleDbUpdate = () => {
+        reloadData();
+      };
+      window.addEventListener('farm_finance_db_updated', handleDbUpdate);
+      return () => {
+        window.removeEventListener('farm_finance_db_updated', handleDbUpdate);
+      };
+    }
   }, [reloadData]);
+
+  // Ensure fresh authoritative state on tab navigation
+  useEffect(() => {
+    reloadData();
+  }, [activeTab, reloadData]);
 
   const handleOnboardingComplete = (profile: FarmProfile) => {
     StorageService.completeOnboarding(profile);
@@ -216,6 +230,9 @@ function AppContent() {
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 py-3 bg-slate-50 overscroll-contain">
         {activeTab === 'dashboard' && (
           <DashboardTab
+            sales={sales}
+            payments={payments}
+            expenses={expenses}
             onOpenNewSale={() => setIsSaleModalOpen(true)}
             onOpenNewExpense={() => setIsExpenseModalOpen(true)}
             onNavigateToTab={(tab) => setActiveTab(tab)}

@@ -1382,22 +1382,40 @@ export const StorageService = {
   },
 
   // =================== METRICS ===================
-  calculateMetrics(dateFilter: DateFilterType, customStart?: string, customEnd?: string): DashboardMetrics {
-    const db = this.loadDatabase();
+  calculateMetricsFromData(
+    sales: Sale[],
+    payments: Payment[],
+    expenses: Expense[],
+    dateFilter: DateFilterType,
+    customStart?: string,
+    customEnd?: string
+  ): DashboardMetrics {
     const dateRange = DateUtils.getDateRange(dateFilter, customStart, customEnd);
 
     // Filter sales and expenses by date range
-    const validSales = db.sales.filter(
+    const validSales = sales.filter(
       (s) => !s.isVoided && DateUtils.isDateInRange(s.date, dateRange)
     );
-    const validExpenses = db.expenses.filter(
+    const validExpenses = expenses.filter(
       (e) => !e.isVoided && DateUtils.isDateInRange(e.date, dateRange)
     );
-    const validPayments = db.payments.filter(
+    const validPayments = payments.filter(
       (p) => !p.isVoided && DateUtils.isDateInRange(p.date, dateRange)
     );
 
     return FinancialCalculator.calculateDashboard(validSales, validPayments, validExpenses);
+  },
+
+  calculateMetrics(dateFilter: DateFilterType, customStart?: string, customEnd?: string): DashboardMetrics {
+    const db = this.loadDatabase();
+    return this.calculateMetricsFromData(
+      db.sales,
+      db.payments,
+      db.expenses,
+      dateFilter,
+      customStart,
+      customEnd
+    );
   },
 
   // =================== CRYPTOGRAPHIC BACKUP & RESTORE ===================
