@@ -9,7 +9,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: (force?: boolean) => Promise<void>;
   deleteAccount: (password?: string) => Promise<void>;
   clearError: () => void;
 }
@@ -123,11 +123,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const signOut = async () => {
+  const signOut = async (force?: boolean) => {
     setError(null);
     setIsLoading(true);
     try {
-      await AuthService.signOut();
+      await AuthService.signOut(force);
     } catch (err) {
       const message = formatAuthError(err);
       setError(message);

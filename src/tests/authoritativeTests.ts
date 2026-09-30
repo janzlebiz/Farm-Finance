@@ -2800,6 +2800,166 @@ export async function runAllIntegrationTests(): Promise<TestSuiteReport> {
       assert(typeof metrics.netIncomeCentavos === 'number', 'Metrics computed consistently regardless of native flag');
     });
 
+    // ----------------------------------------------------
+    // SUITE: P0 SYNC, ACCOUNT REHYDRATION & CONNECTIVITY UX
+    // ----------------------------------------------------
+    await executeTest('P0 Sync & Rehydration', '1. Sign-out clears local data and resets sync cursor to 0', async () => {
+      StorageService.resetToCleanState();
+      SyncEngine.setLastSyncCursor(42, 'test-user-p0');
+      assert(SyncEngine.getLastSyncCursor('test-user-p0') === 42, 'Initial cursor is 42');
+
+      StorageService.clearLocalUserData();
+      SyncEngine.resetCursors();
+      assert(SyncEngine.getLastSyncCursor('test-user-p0') === 0, 'Cursor must be reset to 0 on sign-out/clear');
+      const db = StorageService.loadDatabase();
+      assert(db.sales.length === 0 && db.buyers.length === 0, 'Local data must be empty');
+    });
+
+    await executeTest('P0 Sync & Rehydration', '2. Login with empty local database performs full cloud bootstrap & rebuilds Room data', async () => {
+      StorageService.resetToCleanState();
+      SyncEngine.setLastSyncCursor(0, 'user-rehydrate-p0');
+
+      // Configure mock dispatcher returning cloud bootstrap dataset with 2 sales and 1 buyer
+      const mockCloudDataset = {
+        buyers: [{ id: 'buyer-cloud-1', name: 'Cloud Buyer Alpha', contactNumber: '09170001111', address: 'Farm', notes: '', status: 'ACTIVE', record_sync_version: 1, createdDate: '2026-09-30' }],
+        suppliers: [],
+        sales: [
+          { id: 'sale-cloud-1', date: '2026-09-30', crop: 'Rice', quantity: 100, unit: 'kg', unitPriceCentavos: 2500, grossAmountCentavos: 250000, buyerId: 'buyer-cloud-1', buyerNameSnapshot: 'Cloud Buyer Alpha', isVoided: false, record_sync_version: 1, createdAt: '2026-09-30T00:00:00.000Z', updatedAt: '2026-09-30T00:00:00.000Z' },
+          { id: 'sale-cloud-2', date: '2026-09-30', crop: 'Copra', quantity: 50, unit: 'kg', unitPriceCentavos: 3000, grossAmountCentavos: 150000, buyerId: 'buyer-cloud-1', buyerNameSnapshot: 'Cloud Buyer Alpha', isVoided: false, record_sync_version: 1, createdAt: '2026-09-30T00:00:00.000Z', updatedAt: '2026-09-30T00:00:00.000Z' }
+        ],
+        payments: [{ id: 'pay-cloud-1', saleId: 'sale-cloud-1', buyerId: 'buyer-cloud-1', date: '2026-09-30', amountCentavos: 100000, paymentMethod: 'CASH', isVoided: false, record_sync_version: 1, createdAt: '2026-09-30T00:00:00.000Z' }],
+        expenses: [{ id: 'exp-cloud-1', date: '2026-09-30', category: 'Fertilizer', amountIncurredCentavos: 80000, amountPaidCentavos: 80000, description: 'Urea', crop: 'Rice', isVoided: false, record_sync_version: 1, createdAt: '2026-09-30T00:00:00.000Z', updatedAt: '2026-09-30T00:00:00.000Z' }],
+        expense_payments: [],
+        production_cycles: [],
+        harvests: [],
+        audit_logs: []
+      };
+
+      SyncEngine.setDispatcher({
+        push: async () => ({ results: [], currentServerCursor: 10 }),
+        pull: async (req) => ({
+          changes: [],
+          currentServerCursor: 10,
+          isBootstrap: req.sinceCursor === 0,
+          dataset: req.sinceCursor === 0 ? (mockCloudDataset as any) : undefined
+        })
+      });
+
+      try {
+        const pullRes = await SyncEngine.pullRemoteChanges('user-rehydrate-p0');
+        assert(pullRes.pulledChangesCount > 0, 'Bootstrap pulled items into local store');
+        assert(SyncEngine.getLastSyncCursor('user-rehydrate-p0') === 10, 'Cursor updated to 10');
+
+        const db = StorageService.loadDatabase();
+        assert(db.buyers.length === 1, 'Buyer rehydrated into local database');
+        assert(db.sales.length === 2, '2 Sales rehydrated into local database');
+        assert(db.payments.length === 1, 'Payment rehydrated');
+        assert(db.expenses.length === 1, 'Expense rehydrated');
+
+        // Test 3: Home/Dashboard recalculates rehydrated records accurately
+        const metrics = StorageService.calculateMetricsFromData(db.sales, db.payments, db.expenses, 'all');
+        assert(metrics.totalRevenueCentavos === 400000, 'Total Revenue = 400,000 centavos (250k + 150k)');
+        assert(metrics.totalExpensesCentavos === 80000, 'Total Expenses = 80,000 centavos');
+        assert(metrics.netIncomeCentavos === 320000, 'Net Income = 320,000 centavos (400k - 80k)');
+        assert(metrics.cashReceivedCentavos === 100000, 'Cash Received = 100,000 centavos');
+        assert(metrics.outstandingReceivablesCentavos === 300000, 'Receivables = 300,000 centavos');
+      } finally {
+        SyncEngine.resetDispatcher();
+      }
+    });
+
+    await executeTest('P0 Sync & Rehydration', '4. Offline -> Reconnect -> Sync pushes pending mutations cleanly', async () => {
+      StorageService.resetToCleanState();
+      const buyer = StorageService.createBuyer({ name: 'Offline Buyer', contactNumber: '', address: '', notes: '' });
+
+      // Offline creation: sale is marked PENDING_UPLOAD
+      const sale = StorageService.createSale({
+        date: '2026-09-30',
+        crop: 'Rice',
+        quantity: 50,
+        unit: 'kg',
+        unitPriceCentavos: 2000,
+        buyerId: buyer.id
+      }).sale!;
+
+      const pendingBefore = SyncEngine.detectPendingChanges();
+      assert(pendingBefore.length >= 2, 'Buyer and Sale are pending upload');
+
+      // Mock push response acknowledging both
+      SyncEngine.setDispatcher({
+        push: async (req) => ({
+          results: req.changes.map((c) => ({
+            entityType: c.entityType,
+            entityId: c.entityId,
+            status: 'APPLIED',
+            newVersion: 1,
+            lastSyncedAt: Date.now()
+          })),
+          currentServerCursor: 5
+        }),
+        pull: async () => ({ changes: [], currentServerCursor: 5, isBootstrap: false })
+      });
+
+      try {
+        const pushRes = await SyncEngine.pushPendingChanges('test-user-p0');
+        assert(pushRes.appliedCount >= 2, 'Pending changes applied');
+        const pendingAfter = SyncEngine.detectPendingChanges();
+        assert(pendingAfter.length === 0, 'No remaining pending changes after push');
+      } finally {
+        SyncEngine.resetDispatcher();
+      }
+    });
+
+    await executeTest('P0 Sync & Rehydration', '5. Device A -> Cloud -> Device B incremental sync flow', async () => {
+      StorageService.resetToCleanState();
+      SyncEngine.setLastSyncCursor(5, 'device-b-user');
+
+      const incrementalChange = {
+        cursor: 6,
+        entityType: 'sales' as const,
+        entityId: 'sale-device-a-1',
+        operation: 'UPSERT' as const,
+        record_sync_version: 1,
+        timestamp: Date.now(),
+        record: {
+          id: 'sale-device-a-1',
+          date: '2026-09-30',
+          crop: 'Rice',
+          quantity: 200,
+          unit: 'kg',
+          unitPriceCentavos: 3000,
+          grossAmountCentavos: 600000,
+          buyerId: 'buyer-1',
+          buyerNameSnapshot: 'Buyer A',
+          isVoided: false,
+          record_sync_version: 1,
+          createdAt: '2026-09-30T00:00:00.000Z',
+          updatedAt: '2026-09-30T00:00:00.000Z'
+        }
+      };
+
+      SyncEngine.setDispatcher({
+        push: async () => ({ results: [], currentServerCursor: 6 }),
+        pull: async (req) => ({
+          changes: req.sinceCursor === 5 ? [incrementalChange] : [],
+          currentServerCursor: 6,
+          isBootstrap: false
+        })
+      });
+
+      try {
+        const pullRes = await SyncEngine.pullRemoteChanges('device-b-user');
+        assert(pullRes.pulledChangesCount === 1, 'Device B pulled 1 change');
+        const db = StorageService.loadDatabase();
+        const sale = db.sales.find((s) => s.id === 'sale-device-a-1');
+        assert(!!sale, 'Device A sale merged into Device B local store');
+        assert(sale?.grossAmountCentavos === 600000, 'Sale amount is accurate');
+        assert(SyncEngine.getLastSyncCursor('device-b-user') === 6, 'Cursor advanced to 6');
+      } finally {
+        SyncEngine.resetDispatcher();
+      }
+    });
+
   } finally {
     // Restore original user database state
     StorageService.saveMemoryDatabase(originalDb);

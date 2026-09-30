@@ -83,6 +83,7 @@ export const AuthService = {
 
     // Safely clear local Web IndexedDB / memory data and sync cursors
     StorageService.clearLocalUserData();
+    SyncEngine.resetCursors();
 
     const auth = getFirebaseAuth();
     if (auth) {

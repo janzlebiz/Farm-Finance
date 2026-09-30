@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { CloudSyncState } from '../hooks/useCloudSync';
-import { SyncClient } from '../services/syncClient';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { LogIn, UserPlus, LogOut, CheckCircle2, AlertCircle, Loader2, KeyRound, Mail, ShieldCheck, RefreshCw, Trash2 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -13,6 +13,7 @@ interface AuthModalProps {
 export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, cloudSync }) => {
   const { user, isLoading, error, signIn, register, signInWithGoogle, signOut, deleteAccount, clearError } = useAuth();
   const { isSyncing, lastSyncedAt, syncError, pendingCount, conflictCount, syncNow } = cloudSync;
+  const isOnline = useOnlineStatus();
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -74,440 +75,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
     }
   };
 
-  const [testDetails, setTestDetails] = useState<{
-    diagnostic: {
-      origin: string;
-      baseUrl: string;
-      online: boolean;
-      userExists: boolean;
-      tokenObtained: boolean;
-    };
-    results: {
-      health: { status: string; result: string };
-      unauthPush: { status: string; result: string };
-      authPush: { status: string; result: string };
-      authPull: { status: string; result: string };
-      pureFetch: { status: string; result: string };
-      nativeTest: { status: string; result: string };
-      wvSame: { status: string; result: string };
-      wvCross: { status: string; result: string };
-    };
-    urlParse: {
-      protocol: string;
-      hostname: string;
-      port: string;
-      pathname: string;
-      error: string | null;
-    };
-    exactUrls: {
-      base: string;
-      health: string;
-    };
-  } | null>(null);
-
-  const runConnectivityTest = async () => {
-    const baseUrl = SyncClient.getBaseUrl();
-    const healthUrl = `${baseUrl}/api/health`;
-    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
-    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : false;
-    const hasUser = !!user;
-
-    // URL Parsing Test
-    let urlParseResult = {
-      protocol: '-',
-      hostname: '-',
-      port: '-',
-      pathname: '-',
-      error: null as string | null
-    };
-    try {
-      const u = new URL(healthUrl);
-      urlParseResult = {
-        protocol: u.protocol,
-        hostname: u.hostname,
-        port: u.port || '""',
-        pathname: u.pathname,
-        error: null
-      };
-    } catch (e: any) {
-      urlParseResult.error = e.message;
-    }
-    
-    const initialResults = {
-      health: { status: 'PENDING', result: '-' },
-      unauthPush: { status: 'PENDING', result: '-' },
-      authPush: { status: 'PENDING', result: '-' },
-      authPull: { status: 'PENDING', result: '-' },
-      pureFetch: { status: 'PENDING', result: '-' },
-      nativeTest: { status: 'PENDING', result: '-' },
-      wvSame: { status: 'PENDING', result: '-' },
-      wvCross: { status: 'PENDING', result: '-' },
-    };
-
-    setTestDetails({
-      diagnostic: {
-        origin: currentOrigin,
-        baseUrl: baseUrl || '(relative)',
-        online: isOnline,
-        userExists: hasUser,
-        tokenObtained: false
-      },
-      results: initialResults,
-      urlParse: urlParseResult,
-      exactUrls: {
-        base: baseUrl,
-        health: healthUrl
-      }
-    });
-
-    let token: string | null = null;
-    let tokenSuccess = false;
-
-    if (hasUser) {
-      try {
-        token = await user.getIdToken();
-        tokenSuccess = true;
-      } catch (err) {
-        console.error('Failed to get ID token', err);
-      }
-    }
-
-    setTestDetails(prev => prev ? {
-      ...prev,
-      diagnostic: { ...prev.diagnostic, tokenObtained: tokenSuccess }
-    } : null);
-
-    // TASK 3 - Pure Fetch (No Headers)
-    try {
-      const resPure = await fetch(healthUrl, {
-        method: 'GET',
-        mode: 'cors',
-        cache: 'no-store'
-      });
-      const resStatus = resPure.status;
-      const text = await resPure.text().catch(() => 'No text');
-      setTestDetails(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          results: {
-            ...prev.results,
-            pureFetch: { 
-              status: resStatus === 200 ? 'PASS' : 'FAIL', 
-              result: `HTTP ${resStatus} | Type: ${resPure.type} | URL: ${resPure.url} | Body: ${text.substring(0, 50)}` 
-            }
-          }
-        };
-      });
-    } catch (err: any) {
-      setTestDetails(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          results: {
-            ...prev.results,
-            pureFetch: { status: 'FAIL', result: `Fetch Error: ${err.message}` }
-          }
-        };
-      });
-    }
-
-    // A - Health (Standard)
-    try {
-      const resA = await fetch(healthUrl);
-      const resStatus = resA.status;
-      const pass = resStatus === 200;
-      setTestDetails(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          results: {
-            ...prev.results,
-            health: { status: pass ? 'PASS' : 'FAIL', result: `HTTP ${resStatus}` }
-          }
-        };
-      });
-    } catch (err: any) {
-      setTestDetails(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          results: {
-            ...prev.results,
-            health: { status: 'FAIL', result: err.message || 'Error' }
-          }
-        };
-      });
-    }
-
-    // B - Unauth Push
-    try {
-      const resB = await fetch(`${baseUrl}/api/sync/push`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ changes: [] })
-      });
-      const resStatus = resB.status;
-      const pass = resStatus === 401;
-      setTestDetails(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          results: {
-            ...prev.results,
-            unauthPush: { status: pass ? 'PASS' : 'FAIL', result: `HTTP ${resStatus}` }
-          }
-        };
-      });
-    } catch (err: any) {
-      setTestDetails(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          results: {
-            ...prev.results,
-            unauthPush: { status: 'FAIL', result: err.message || 'Error' }
-          }
-        };
-      });
-    }
-
-    // C - Auth Push (Platform-aware: Native on Android, fetch on Web)
-    if (hasUser && token) {
-      try {
-        const isNative = typeof window !== 'undefined' && Boolean((window as any).FarmFinanceNative?.nativeSyncPush);
-        if (isNative) {
-          const raw = (window as any).FarmFinanceNative.nativeSyncPush(token, JSON.stringify({ userId: user.uid, changes: [] }));
-          const res = JSON.parse(raw);
-          const pass = res.status === 200 && res.success;
-          setTestDetails(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              results: {
-                ...prev.results,
-                authPush: { status: pass ? 'PASS' : 'FAIL', result: `Native HTTPS: HTTP ${res.status}${res.error ? ` | ${res.error}` : ''}` }
-              }
-            };
-          });
-        } else {
-          const resC = await fetch(`${baseUrl}/api/sync/push`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ userId: user.uid, changes: [] })
-          });
-          const resStatus = resC.status;
-          const pass = resStatus === 200;
-          setTestDetails(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              results: {
-                ...prev.results,
-                authPush: { status: pass ? 'PASS' : 'FAIL', result: `Web Fetch: HTTP ${resStatus}` }
-              }
-            };
-          });
-        }
-      } catch (err: any) {
-        setTestDetails(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            results: {
-              ...prev.results,
-              authPush: { status: 'FAIL', result: err.message || 'Error' }
-            }
-          };
-        });
-      }
-    } else {
-      setTestDetails(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          results: {
-            ...prev.results,
-            authPush: { status: 'SKIPPED', result: 'No Auth' }
-          }
-        };
-      });
-    }
-
-    // D - Auth Pull (Platform-aware: Native on Android, fetch on Web)
-    if (hasUser && token) {
-      try {
-        const isNative = typeof window !== 'undefined' && Boolean((window as any).FarmFinanceNative?.nativeSyncPull);
-        if (isNative) {
-          const raw = (window as any).FarmFinanceNative.nativeSyncPull(token, JSON.stringify({ userId: user.uid, sinceCursor: 0 }));
-          const res = JSON.parse(raw);
-          const pass = res.status === 200 && res.success;
-          let pullInfo = `Native HTTPS: HTTP ${res.status}`;
-          if (pass && res.body) {
-            try {
-              const data = JSON.parse(res.body);
-              pullInfo = `Native HTTPS: HTTP 200 | Size: ${res.body.length}B | Cursor: ${data.currentServerCursor} | Bootstrap: ${data.isBootstrap}`;
-            } catch {
-              pullInfo = `Native HTTPS: HTTP 200 | Body OK`;
-            }
-          } else if (res.error) {
-            pullInfo += ` | ${res.error}`;
-          }
-
-          setTestDetails(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              results: {
-                ...prev.results,
-                authPull: { status: pass ? 'PASS' : 'FAIL', result: pullInfo }
-              }
-            };
-          });
-        } else {
-          const resD = await fetch(`${baseUrl}/api/sync/pull`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ userId: user.uid, sinceCursor: 0 })
-          });
-          const resStatus = resD.status;
-          const pass = resStatus === 200;
-          
-          let pullInfo = `Web Fetch: HTTP ${resStatus}`;
-          if (pass) {
-            const data = await resD.json();
-            pullInfo = `Web Fetch: HTTP 200 | Size: ${JSON.stringify(data).length}B | Cursor: ${data.currentServerCursor} | Bootstrap: ${data.isBootstrap}`;
-          }
-
-          setTestDetails(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              results: {
-                ...prev.results,
-                authPull: { status: pass ? 'PASS' : 'FAIL', result: pullInfo }
-              }
-            };
-          });
-        }
-      } catch (err: any) {
-        setTestDetails(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            results: {
-              ...prev.results,
-              authPull: { status: 'FAIL', result: err.message || 'Error' }
-            }
-          };
-        });
-      }
-    } else {
-      setTestDetails(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          results: {
-            ...prev.results,
-            authPull: { status: 'SKIPPED', result: 'No Auth' }
-          }
-        };
-      });
-    }
-
-    // TASK 7 - WebView Diagnostics
-    try {
-      const resSame = await fetch('https://appassets.androidplatform.net/assets/www/index.html');
-      setTestDetails(prev => prev ? {
-        ...prev,
-        results: { ...prev.results, wvSame: { status: resSame.status === 200 ? 'PASS' : 'FAIL', result: `Same-Origin: HTTP ${resSame.status}` } }
-      } : null);
-    } catch (e: any) {
-      setTestDetails(prev => prev ? {
-        ...prev,
-        results: { ...prev.results, wvSame: { status: 'FAIL', result: `Same-Origin Error: ${e.message}` } }
-      } : null);
-    }
-
-    try {
-      const resCross = await fetch(healthUrl);
-      setTestDetails(prev => prev ? {
-        ...prev,
-        results: { ...prev.results, wvCross: { status: resCross.status === 200 ? 'PASS' : 'FAIL', result: `Cross-Origin: HTTP ${resCross.status}` } }
-      } : null);
-    } catch (e: any) {
-      setTestDetails(prev => prev ? {
-        ...prev,
-        results: { ...prev.results, wvCross: { status: 'FAIL', result: `Cross-Origin Error: ${e.message}` } }
-      } : null);
-    }
-
-    // TASK 4 - Native Test
-    const nativeBridge = (window as any).FarmFinanceNative;
-    if (nativeBridge && typeof nativeBridge.testCloudHealth === 'function') {
-      try {
-        const nativeResStr = nativeBridge.testCloudHealth(healthUrl);
-        const nativeRes = JSON.parse(nativeResStr);
-        
-        let resultInfo = '';
-        if (nativeRes.success) {
-          resultInfo = `HTTP ${nativeRes.status} | DNS: OK | TLS: OK | Body: ${nativeRes.body.substring(0, 50)}`;
-        } else {
-          resultInfo = `FAIL | ${nativeRes.exception}: ${nativeRes.message}`;
-          if (nativeRes.dns_failed) resultInfo += ' (DNS FAIL)';
-          if (nativeRes.tls_failed) resultInfo += ' (TLS FAIL)';
-        }
-
-        setTestDetails(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            results: {
-              ...prev.results,
-              nativeTest: { status: nativeRes.success && nativeRes.status === 200 ? 'PASS' : 'FAIL', result: resultInfo }
-            }
-          };
-        });
-      } catch (err: any) {
-        setTestDetails(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            results: {
-              ...prev.results,
-              nativeTest: { status: 'FAIL', result: `Bridge Error: ${err.message}` }
-            }
-          };
-        });
-      }
-    } else {
-      setTestDetails(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          results: {
-            ...prev.results,
-            nativeTest: { status: 'SKIPPED', result: 'Native bridge unavailable' }
-          }
-        };
-      });
-    }
-  };
-
   const handleSignOut = async () => {
     setLocalError(null);
     setActionSuccess(null);
+    if (pendingCount > 0) {
+      const confirmSignOut = window.confirm(
+        `You have ${pendingCount} un-synced change(s) pending upload. Signing out will clear local data on this device. Do you want to sign out anyway?`
+      );
+      if (!confirmSignOut) return;
+    }
     try {
-      await signOut();
+      await signOut(true);
       setActionSuccess('Successfully signed out.');
-    } catch {
-      // Handled in context
+    } catch (err: any) {
+      setLocalError(err?.message || 'Failed to sign out.');
     }
   };
 
@@ -551,6 +132,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
 
   const activeError = localError || error;
 
+  // Real-time connectivity & sync badge resolution
+  const getStatusBadge = () => {
+    if (!isOnline) {
+      return (
+        <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded-full flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+          Offline
+        </span>
+      );
+    }
+    if (isSyncing) {
+      return (
+        <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 bg-sky-100 text-sky-900 border border-sky-300 rounded-full flex items-center gap-1 animate-pulse">
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping" />
+          Syncing
+        </span>
+      );
+    }
+    if (syncError) {
+      return (
+        <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 bg-rose-100 text-rose-900 border border-rose-300 rounded-full flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+          Sync Error
+        </span>
+      );
+    }
+    if (pendingCount > 0) {
+      return (
+        <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded-full flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+          {pendingCount} Pending
+        </span>
+      );
+    }
+    return (
+      <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-full flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+        Synced
+      </span>
+    );
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
       <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
@@ -562,8 +185,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
               <ShieldCheck className="w-5 h-5 text-emerald-200" />
             </div>
             <div>
-              <h2 className="text-base font-bold">Cloud Account & Identity</h2>
-              <p className="text-[11px] text-emerald-200">Phase D · Secure User Profile Foundation</p>
+              <h2 className="text-base font-bold">Cloud Account & Sync</h2>
+              <p className="text-[11px] text-emerald-200">Encrypted Backup & Real-Time Sync</p>
             </div>
           </div>
           <button
@@ -600,24 +223,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     Authenticated Session Active
                   </span>
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-emerald-200 text-emerald-900 rounded-full">
-                    Online
-                  </span>
+                  {getStatusBadge()}
                 </div>
                 <div className="space-y-1.5 text-xs text-slate-700 pt-1">
                   <div className="flex items-center justify-between border-b border-emerald-100/80 pb-1">
                     <span className="text-slate-500">Email:</span>
                     <span className="font-semibold text-slate-900">{user.email || 'Anonymous'}</span>
                   </div>
-                  <div className="flex items-center justify-between border-b border-emerald-100/80 pb-1">
-                    <span className="text-slate-500">User UID:</span>
-                    <span className="font-mono text-[10px] text-slate-600 truncate max-w-[190px]" title={user.uid}>
-                      {user.uid}
-                    </span>
-                  </div>
                   <div className="flex items-center justify-between pt-0.5">
-                    <span className="text-slate-500">Firestore Profile:</span>
-                    <span className="font-mono text-[10px] text-emerald-800 font-medium">/users/{user.uid}</span>
+                    <span className="text-slate-500">Sync Status:</span>
+                    <span className="font-semibold text-slate-800">
+                      {!isOnline ? 'Offline' : isSyncing ? 'Syncing...' : syncError ? 'Error' : pendingCount > 0 ? 'Pending Upload' : 'Fully Synced'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -658,140 +275,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
                 <button
                   type="button"
                   onClick={() => syncNow()}
-                  disabled={isSyncing}
+                  disabled={isSyncing || !isOnline}
                   className="w-full py-2 px-3 bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                   <span>{isSyncing ? 'Synchronizing with Cloud...' : 'Sync with Cloud Now'}</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={runConnectivityTest}
-                  className="w-full py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10px] rounded-lg transition cursor-pointer mt-2"
-                >
-                  Run Cloud Connectivity Test
-                </button>
-
-                {testDetails && (
-                  <div className="mt-3 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                    {/* Diagnostic Info */}
-                    <div className="p-2 bg-slate-900 text-slate-100 text-[9px] font-mono rounded-lg space-y-1">
-                      <div className="text-emerald-400 font-bold border-b border-slate-700 pb-0.5 mb-1 flex items-center justify-between">
-                        <span>DIAGNOSTIC ENV</span>
-                        <span>{new Date().toLocaleTimeString()}</span>
-                      </div>
-                      <div className="grid grid-cols-[70px_1fr] gap-x-2">
-                        <span className="text-slate-500">Origin:</span>
-                        <span className="truncate">{testDetails.diagnostic.origin}</span>
-                        <span className="text-slate-500">API Base:</span>
-                        <span className="truncate">{testDetails.diagnostic.baseUrl}</span>
-                        <span className="text-slate-500">Network:</span>
-                        <span className={testDetails.diagnostic.online ? 'text-emerald-400' : 'text-rose-400'}>
-                          {testDetails.diagnostic.online ? 'ONLINE' : 'OFFLINE'}
-                        </span>
-                        <span className="text-slate-500">Auth User:</span>
-                        <span>{testDetails.diagnostic.userExists ? 'YES' : 'NO'}</span>
-                        <span className="text-slate-500">ID Token:</span>
-                        <span className={testDetails.diagnostic.tokenObtained ? 'text-emerald-400' : 'text-rose-400'}>
-                          {testDetails.diagnostic.tokenObtained ? 'OBTAINED' : 'FAILED/NONE'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* TASK 1 & 2: URL Diagnostics */}
-                    <div className="p-2 bg-slate-900 text-slate-100 text-[9px] font-mono rounded-lg space-y-1">
-                      <div className="text-blue-400 font-bold border-b border-slate-700 pb-0.5 mb-1">
-                        URL & PARSING DIAGNOSTICS
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex flex-col">
-                          <span className="text-slate-500">HEALTH_ENDPOINT_EXACT:</span>
-                          <div className="bg-slate-950 p-1 mt-0.5 rounded select-all break-all border border-slate-800">
-                            {testDetails.exactUrls.health}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-[70px_1fr] gap-x-2 mt-1">
-                          <span className="text-slate-500">Protocol:</span>
-                          <span>{testDetails.urlParse.protocol}</span>
-                          <span className="text-slate-500">Hostname:</span>
-                          <span>{testDetails.urlParse.hostname}</span>
-                          <span className="text-slate-500">Port:</span>
-                          <span>{testDetails.urlParse.port}</span>
-                          <span className="text-slate-500">Path:</span>
-                          <span>{testDetails.urlParse.pathname}</span>
-                          {testDetails.urlParse.error && (
-                            <>
-                              <span className="text-rose-400 font-bold">Error:</span>
-                              <span className="text-rose-400">{testDetails.urlParse.error}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Test Matrix */}
-                    <div className="p-2 bg-slate-800 text-slate-100 text-[10px] font-mono rounded-lg space-y-1.5">
-                      <div className="text-emerald-400 font-bold border-b border-slate-700 pb-0.5 mb-1">
-                        TEST MATRIX: WEBVIEW VS NATIVE
-                      </div>
-                      
-                      {[
-                        { label: 'WV Same-Origin', key: 'wvSame' },
-                        { label: 'WV Cross-Origin', key: 'wvCross' },
-                        { label: 'NATIVE ANDROID HTTPS', key: 'nativeTest' },
-                        { label: 'Native Auth Push', key: 'authPush' },
-                        { label: 'Native Auth Pull', key: 'authPull' }
-                      ].map(test => {
-                        const res = testDetails.results[test.key as keyof typeof testDetails.results];
-                        const isPass = res.status === 'PASS';
-                        const isFail = res.status === 'FAIL';
-                        const isPending = res.status === 'PENDING';
-                        
-                        return (
-                          <div key={test.key} className="space-y-0.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-300">{test.label}</span>
-                              <span className={`font-bold ${
-                                isPass ? 'text-emerald-400' : 
-                                isFail ? 'text-rose-400' : 
-                                isPending ? 'text-amber-400 animate-pulse' : 'text-slate-500'
-                              }`}>
-                                {res.status}
-                              </span>
-                            </div>
-                            <div className="text-[9px] text-slate-400 pl-2 border-l border-slate-700 break-all leading-tight">
-                              {res.result}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* TASK 6: External Browser Diagnostic */}
-                    <div className="space-y-2">
-                      <a 
-                        href={testDetails.exactUrls.health}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-2 w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                        Open Cloud API Health
-                      </a>
-                      <p className="text-[9px] text-slate-500 text-center px-4 italic">
-                        If this opens in Chrome/Safari but the app tests fail, the issue is WebView-specific.
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
                 <p className="font-semibold text-slate-800">🔒 Security & User Isolation</p>
-                <p>Security rules restrict Firestore access strictly to your own user document. All other users, collections, and internal sync paths are strictly denied.</p>
+                <p>Security rules restrict Firestore access strictly to your own user account. All transactions are securely isolated and encrypted.</p>
               </div>
 
               <div className="space-y-2 pt-1">
@@ -839,7 +333,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
                     </div>
 
                      <p className="text-[11px] text-rose-800">
-                      This will permanently purge all cloud data under <code className="font-mono font-bold">/users/{user.uid}</code>, delete your Firebase Auth account, and clear local storage. This cannot be undone.
+                      This will permanently purge all cloud data, delete your Firebase Auth account, and clear local storage. This cannot be undone.
                     </p>
 
                     <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-900 space-y-1">
@@ -1023,7 +517,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
                 <p className="font-semibold text-slate-700">🌱 Local-First Architecture</p>
-                <p>Signing in sets up your cloud identity document at <code className="font-mono text-emerald-800 font-bold">/users/&#123;uid&#125;</code>. All accounting operations remain offline and local.</p>
+                <p>All accounting operations remain offline and local. Connecting your account enables automatic, encrypted cloud sync across devices.</p>
               </div>
             </div>
           )}

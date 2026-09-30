@@ -5,6 +5,7 @@ import { MoneyUtils } from './utils/money';
 import { DateUtils } from './utils/date';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useCloudSync } from './hooks/useCloudSync';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 // Tab screens
 import { DashboardTab } from './components/DashboardTab';
@@ -46,6 +47,7 @@ import {
 
 function AppContent() {
   const { user } = useAuth();
+  const isOnline = useOnlineStatus();
   const [activeTab, setActiveTab] = useState<string>('dashboard');
 
   // Database records
@@ -187,12 +189,14 @@ function AppContent() {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setIsAuthModalOpen(true)}
-            className="p-2 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 transition flex items-center gap-1"
+            className="p-2 rounded-xl bg-emerald-700/80 hover:bg-emerald-700 text-emerald-100 transition flex items-center gap-1 cursor-pointer"
             aria-label="Cloud Account"
             title={
               user
                 ? `Signed in as ${user.email}${
-                    isSyncing
+                    !isOnline
+                      ? ' (Offline)'
+                      : isSyncing
                       ? ' (Syncing...)'
                       : pendingCount > 0
                       ? ` (${pendingCount} pending upload)`
@@ -205,12 +209,14 @@ function AppContent() {
             {user && (
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
-                  isSyncing
-                    ? 'bg-amber-300 animate-ping'
+                  !isOnline
+                    ? 'bg-amber-400'
+                    : isSyncing
+                    ? 'bg-sky-300 animate-ping'
                     : conflictCount > 0
                     ? 'bg-rose-400'
                     : pendingCount > 0
-                    ? 'bg-amber-400'
+                    ? 'bg-amber-300'
                     : 'bg-emerald-300'
                 }`}
               />

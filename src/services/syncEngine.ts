@@ -76,6 +76,30 @@ export class SyncEngine {
   }
 
   /**
+   * Clears and resets all sync cursors across memory, native bridge, and storage
+   */
+  static resetCursors(): void {
+    memoryCursorStorage.clear();
+    if (typeof window !== 'undefined' && (window as any).FarmFinanceNative?.setSyncCursor) {
+      try {
+        (window as any).FarmFinanceNative.setSyncCursor(0);
+      } catch (_: any) {}
+    }
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith(SYNC_CURSOR_STORAGE_KEY) || key.includes('sync'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      } catch (_: any) {}
+    }
+  }
+
+  /**
    * Scans local working database for records marked PENDING_UPLOAD
    */
   static detectPendingChanges(): SyncChangeItem[] {

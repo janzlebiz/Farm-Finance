@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { SyncEngine } from '../services/syncEngine';
+import { StorageService } from '../services/storage';
 import { useOnlineStatus } from './useOnlineStatus';
 
 export interface CloudSyncState {
@@ -37,6 +38,19 @@ export function useCloudSync(user: User | null, onDataSynced?: () => void): Clou
       setIsSyncing(true);
       setSyncError(null);
 
+      // Check if local database is clean/empty: if so, force bootstrap (cursor = 0) to rehydrate
+      const db = StorageService.loadDatabase();
+      const isLocalEmpty =
+        db.sales.length === 0 &&
+        db.expenses.length === 0 &&
+        db.buyers.length === 0 &&
+        db.suppliers.length === 0 &&
+        db.cycles.length === 0;
+
+      if (isLocalEmpty && SyncEngine.getLastSyncCursor(user.uid) > 0) {
+        SyncEngine.setLastSyncCursor(0, user.uid);
+      }
+
       // 1. Push local pending mutations
       const pushRes = await SyncEngine.pushPendingChanges(user.uid);
 
@@ -46,8 +60,8 @@ export function useCloudSync(user: User | null, onDataSynced?: () => void): Clou
       setLastSyncedAt(new Date());
       updateSummary();
 
-      // If changes were applied or pulled, notify UI to reload
-      if (pushRes.appliedCount > 0 || pullRes.pulledChangesCount > 0) {
+      // If changes were applied or pulled, or if rehydrating an empty state, notify UI to reload
+      if (pushRes.appliedCount > 0 || pullRes.pulledChangesCount > 0 || isLocalEmpty) {
         onDataSyncedRef.current?.();
       }
     } catch (err: any) {

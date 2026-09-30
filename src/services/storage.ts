@@ -1783,6 +1783,12 @@ export const StorageService = {
 
   clearLocalUserData(): void {
     this.resetToCleanState();
+    removeStorageItem('farm_finance_last_sync_cursor');
+    if (typeof window !== 'undefined' && (window as any).FarmFinanceNative?.setSyncCursor) {
+      try {
+        (window as any).FarmFinanceNative.setSyncCursor(0);
+      } catch (_: any) {}
+    }
     try {
       if (typeof localStorage !== 'undefined') {
         const keysToRemove: string[] = [];
@@ -1793,6 +1799,9 @@ export const StorageService = {
           }
         }
         keysToRemove.forEach((k) => removeStorageItem(k));
+      }
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('farm_finance_preview_db');
       }
     } catch (_: any) {}
   },

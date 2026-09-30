@@ -1430,6 +1430,8 @@ class FarmFinanceNativeBridge(
                 )
             }
 
+            com.farmfinance.app.sync.RoomSyncManager.setSyncCursor(context, 0L)
+
             JSONObject().apply {
                 put("success", true)
                 put("message", "All records cleared. Database is now ready for a clean new user!")
