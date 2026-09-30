@@ -73,6 +73,45 @@ class FarmFinanceNativeBridge(
     }
 
     @JavascriptInterface
+    fun testCloudHealth(urlStr: String): String = runBlocking(Dispatchers.IO) {
+        val result = JSONObject()
+        try {
+            android.util.Log.d("FarmFinanceNative", "WEBVIEW_NETWORK_TEST_START: $urlStr")
+            val url = java.net.URL(urlStr)
+            val connection = (url.openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 10000
+                readTimeout = 10000
+                doInput = true
+                instanceFollowRedirects = true
+            }
+            
+            val responseCode = connection.responseCode
+            val responseBody = try {
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } catch (e: Exception) {
+                connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "No response body"
+            }
+            
+            result.put("success", true)
+            result.put("status", responseCode)
+            result.put("body", responseBody)
+            result.put("dns_success", true)
+            result.put("tls_success", true)
+            android.util.Log.d("FarmFinanceNative", "WEBVIEW_NETWORK_TEST_SUCCESS: status=$responseCode")
+        } catch (e: Exception) {
+            android.util.Log.e("FarmFinanceNative", "WEBVIEW_NETWORK_TEST_FAILURE: ${e.javaClass.simpleName} - ${e.message}")
+            result.put("success", false)
+            result.put("exception", e.javaClass.simpleName)
+            result.put("message", e.message ?: "Unknown error")
+            
+            if (e is java.net.UnknownHostException) result.put("dns_failed", true)
+            if (e is javax.net.ssl.SSLException) result.put("tls_failed", true)
+        }
+        result.toString()
+    }
+
+    @JavascriptInterface
     fun getDatabaseState(): String = runBlocking(Dispatchers.IO) {
         try {
             val buyers = db.buyerDao().getAllBuyersSync()

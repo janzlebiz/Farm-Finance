@@ -257,7 +257,7 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
-                    Log.d("FarmFinanceWV", "onPageStarted: $url")
+                    Log.d("FarmFinanceWV", "onPageStarted: $url | Origin: ${view?.url}")
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -271,7 +271,7 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
                     error: WebResourceError?
                 ) {
                     super.onReceivedError(view, request, error)
-                    Log.e("FarmFinanceWV", "onReceivedError: ${request?.url} -> error code=${error?.errorCode}, desc=${error?.description}")
+                    Log.e("FarmFinanceWV", "WEBVIEW_NETWORK_TEST_FAILURE (Error): ${request?.url} -> error code=${error?.errorCode}, desc=${error?.description}")
                 }
 
                 override fun onReceivedHttpError(
@@ -280,7 +280,7 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
                     errorResponse: WebResourceResponse?
                 ) {
                     super.onReceivedHttpError(view, request, errorResponse)
-                    Log.e("FarmFinanceWV", "onReceivedHttpError: ${request?.url} -> status=${errorResponse?.statusCode}")
+                    Log.e("FarmFinanceWV", "WEBVIEW_NETWORK_TEST_FAILURE (HTTP Error): ${request?.url} -> status=${errorResponse?.statusCode}")
                 }
 
                 override fun onRenderProcessGone(
@@ -295,7 +295,18 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
                     view: WebView,
                     request: WebResourceRequest
                 ): WebResourceResponse? {
-                    return assetLoader.shouldInterceptRequest(request.url)
+                    val url = request.url
+                    // TASK 6: ONLY intercept local assets. External HTTPS requests MUST pass through normally.
+                    if (url.scheme == "https" && url.host == "appassets.androidplatform.net") {
+                        val response = assetLoader.shouldInterceptRequest(url)
+                        if (response != null) {
+                            Log.d("FarmFinanceWV", "INTERCEPTED (AssetLoader): $url")
+                            return response
+                        }
+                    }
+                    
+                    Log.d("FarmFinanceWV", "PASS-THROUGH (Network): $url")
+                    return null
                 }
 
                 override fun shouldOverrideUrlLoading(

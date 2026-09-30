@@ -87,20 +87,57 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
       unauthPush: { status: string; result: string };
       authPush: { status: string; result: string };
       authPull: { status: string; result: string };
+      pureFetch: { status: string; result: string };
+      nativeTest: { status: string; result: string };
+    };
+    urlParse: {
+      protocol: string;
+      hostname: string;
+      port: string;
+      pathname: string;
+      error: string | null;
+    };
+    exactUrls: {
+      base: string;
+      health: string;
     };
   } | null>(null);
 
   const runConnectivityTest = async () => {
     const baseUrl = SyncClient.getBaseUrl();
+    const healthUrl = `${baseUrl}/api/health`;
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : false;
     const hasUser = !!user;
+
+    // URL Parsing Test
+    let urlParseResult = {
+      protocol: '-',
+      hostname: '-',
+      port: '-',
+      pathname: '-',
+      error: null as string | null
+    };
+    try {
+      const u = new URL(healthUrl);
+      urlParseResult = {
+        protocol: u.protocol,
+        hostname: u.hostname,
+        port: u.port || '""',
+        pathname: u.pathname,
+        error: null
+      };
+    } catch (e: any) {
+      urlParseResult.error = e.message;
+    }
     
     const initialResults = {
       health: { status: 'PENDING', result: '-' },
       unauthPush: { status: 'PENDING', result: '-' },
       authPush: { status: 'PENDING', result: '-' },
       authPull: { status: 'PENDING', result: '-' },
+      pureFetch: { status: 'PENDING', result: '-' },
+      nativeTest: { status: 'PENDING', result: '-' },
     };
 
     setTestDetails({
@@ -111,7 +148,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
         userExists: hasUser,
         tokenObtained: false
       },
-      results: initialResults
+      results: initialResults,
+      urlParse: urlParseResult,
+      exactUrls: {
+        base: baseUrl,
+        health: healthUrl
+      }
     });
 
     let token: string | null = null;
@@ -131,9 +173,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
       diagnostic: { ...prev.diagnostic, tokenObtained: tokenSuccess }
     } : null);
 
-    // A - Health
+    // TASK 3 - Pure Fetch (No Headers)
     try {
-      const resA = await fetch(`${baseUrl}/api/health`);
+      const resPure = await fetch(healthUrl, {
+        method: 'GET',
+        mode: 'cors',
+        cache: 'no-store'
+      });
+      const resStatus = resPure.status;
+      const text = await resPure.text().catch(() => 'No text');
+      setTestDetails(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          results: {
+            ...prev.results,
+            pureFetch: { 
+              status: resStatus === 200 ? 'PASS' : 'FAIL', 
+              result: `HTTP ${resStatus} | Type: ${resPure.type} | URL: ${resPure.url} | Body: ${text.substring(0, 50)}` 
+            }
+          }
+        };
+      });
+    } catch (err: any) {
+      setTestDetails(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          results: {
+            ...prev.results,
+            pureFetch: { status: 'FAIL', result: `Fetch Error: ${err.message}` }
+          }
+        };
+      });
+    }
+
+    // A - Health (Standard)
+    try {
+      const resA = await fetch(healthUrl);
       const resStatus = resA.status;
       const pass = resStatus === 200;
       setTestDetails(prev => {
@@ -289,6 +366,57 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
           results: {
             ...prev.results,
             authPull: { status: 'SKIPPED', result: 'No Auth' }
+          }
+        };
+      });
+    }
+
+    // TASK 4 - Native Test
+    const nativeBridge = (window as any).FarmFinanceNative;
+    if (nativeBridge && typeof nativeBridge.testCloudHealth === 'function') {
+      try {
+        const nativeResStr = nativeBridge.testCloudHealth(healthUrl);
+        const nativeRes = JSON.parse(nativeResStr);
+        
+        let resultInfo = '';
+        if (nativeRes.success) {
+          resultInfo = `HTTP ${nativeRes.status} | DNS: OK | TLS: OK | Body: ${nativeRes.body.substring(0, 50)}`;
+        } else {
+          resultInfo = `FAIL | ${nativeRes.exception}: ${nativeRes.message}`;
+          if (nativeRes.dns_failed) resultInfo += ' (DNS FAIL)';
+          if (nativeRes.tls_failed) resultInfo += ' (TLS FAIL)';
+        }
+
+        setTestDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            results: {
+              ...prev.results,
+              nativeTest: { status: nativeRes.success && nativeRes.status === 200 ? 'PASS' : 'FAIL', result: resultInfo }
+            }
+          };
+        });
+      } catch (err: any) {
+        setTestDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            results: {
+              ...prev.results,
+              nativeTest: { status: 'FAIL', result: `Bridge Error: ${err.message}` }
+            }
+          };
+        });
+      }
+    } else {
+      setTestDetails(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          results: {
+            ...prev.results,
+            nativeTest: { status: 'SKIPPED', result: 'Native bridge unavailable' }
           }
         };
       });
@@ -494,17 +622,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
                       </div>
                     </div>
 
-                    {/* Test Results */}
+                    {/* TASK 1 & 2: URL Diagnostics */}
+                    <div className="p-2 bg-slate-900 text-slate-100 text-[9px] font-mono rounded-lg space-y-1">
+                      <div className="text-blue-400 font-bold border-b border-slate-700 pb-0.5 mb-1">
+                        URL & PARSING DIAGNOSTICS
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex flex-col">
+                          <span className="text-slate-500">HEALTH_ENDPOINT_EXACT:</span>
+                          <div className="bg-slate-950 p-1 mt-0.5 rounded select-all break-all border border-slate-800">
+                            {testDetails.exactUrls.health}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-[70px_1fr] gap-x-2 mt-1">
+                          <span className="text-slate-500">Protocol:</span>
+                          <span>{testDetails.urlParse.protocol}</span>
+                          <span className="text-slate-500">Hostname:</span>
+                          <span>{testDetails.urlParse.hostname}</span>
+                          <span className="text-slate-500">Port:</span>
+                          <span>{testDetails.urlParse.port}</span>
+                          <span className="text-slate-500">Path:</span>
+                          <span>{testDetails.urlParse.pathname}</span>
+                          {testDetails.urlParse.error && (
+                            <>
+                              <span className="text-rose-400 font-bold">Error:</span>
+                              <span className="text-rose-400">{testDetails.urlParse.error}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Test Matrix */}
                     <div className="p-2 bg-slate-800 text-slate-100 text-[10px] font-mono rounded-lg space-y-1.5">
                       <div className="text-emerald-400 font-bold border-b border-slate-700 pb-0.5 mb-1">
-                        CONNECTIVITY RESULTS
+                        TEST MATRIX: WEBVIEW VS NATIVE
                       </div>
                       
                       {[
-                        { label: 'A Health', key: 'health' },
-                        { label: 'B Unauth Push', key: 'unauthPush' },
-                        { label: 'C Auth Push', key: 'authPush' },
-                        { label: 'D Auth Pull', key: 'authPull' }
+                        { label: 'WEBVIEW FETCH (Health)', key: 'health' },
+                        { label: 'WEBVIEW FETCH (Pure)', key: 'pureFetch' },
+                        { label: 'NATIVE ANDROID HTTPS', key: 'nativeTest' },
+                        { label: 'Cloud Push (Auth)', key: 'authPush' },
+                        { label: 'Cloud Pull (Auth)', key: 'authPull' }
                       ].map(test => {
                         const res = testDetails.results[test.key as keyof typeof testDetails.results];
                         const isPass = res.status === 'PASS';
@@ -529,6 +689,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
                           </div>
                         );
                       })}
+                    </div>
+
+                    {/* TASK 6: External Browser Diagnostic */}
+                    <div className="space-y-2">
+                      <a 
+                        href={testDetails.exactUrls.health}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        Open Cloud API Health
+                      </a>
+                      <p className="text-[9px] text-slate-500 text-center px-4 italic">
+                        If this opens in Chrome/Safari but the app tests fail, the issue is WebView-specific.
+                      </p>
                     </div>
                   </div>
                 )}
