@@ -1,10 +1,23 @@
 import { initializeApp, getApps, getApp, App } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
-import appletConfig from '../firebase-config.json';
+import appletConfig from '../firebase-applet-config.json';
 
-const projectId = process.env.VITE_FIREBASE_PROJECT_ID || appletConfig.projectId || 'gen-lang-client-0427039673';
-const firestoreDbId = process.env.VITE_FIREBASE_DATABASE_ID || appletConfig.firestoreDatabaseId || '(default)';
+const EXPECTED_PROJECT_ID = 'farm-finance-510206';
+const EXPECTED_DATABASE_ID = 'ai-studio-farmfinance-93149cfe-1ff5-4e4b-a384-aa96984b5b0f';
+
+const projectId = appletConfig.projectId;
+const firestoreDbId = appletConfig.firestoreDatabaseId;
+
+if (projectId !== EXPECTED_PROJECT_ID) {
+  throw new Error(`CRITICAL CONFIG ERROR: Expected Project ID ${EXPECTED_PROJECT_ID}, but found ${projectId}`);
+}
+if (firestoreDbId !== EXPECTED_DATABASE_ID) {
+  throw new Error(`CRITICAL CONFIG ERROR: Expected Database ID ${EXPECTED_DATABASE_ID}, but found ${firestoreDbId}`);
+}
+
+console.log('[Firebase Admin] Initializing with project:', projectId);
+console.log('[Firebase Admin] Initializing with database:', firestoreDbId);
 
 export const adminApp: App = getApps().length === 0
   ? initializeApp({ projectId })
