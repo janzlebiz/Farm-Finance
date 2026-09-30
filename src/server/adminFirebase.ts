@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp, App } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
-import appletConfig from '../firebase-applet-config.json';
+import appletConfig from '../../firebase-applet-config.json';
 
 const EXPECTED_PROJECT_ID = 'farm-finance-510206';
 const EXPECTED_DATABASE_ID = 'ai-studio-farmfinance-93149cfe-1ff5-4e4b-a384-aa96984b5b0f';
@@ -23,7 +23,7 @@ export const adminApp: App = getApps().length === 0
   ? initializeApp({ projectId })
   : getApp();
 
-let activeAdminDb: any = firestoreDbId && firestoreDbId !== '(default)'
+let activeAdminDb: any = (firestoreDbId as string) && (firestoreDbId as string) !== '(default)'
   ? getFirestore(adminApp, firestoreDbId)
   : getFirestore(adminApp);
 

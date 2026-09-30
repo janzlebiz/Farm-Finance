@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ServerSyncService } from './src/server/syncService';
-import { adminAuth } from './src/server/adminFirebase';
+import { adminAuth, adminApp, adminDb } from './src/server/adminFirebase';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
