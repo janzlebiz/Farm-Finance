@@ -237,15 +237,19 @@ class MainActivity : ComponentActivity(), FarmFinanceNativeBridge.BackupRestoreH
             // Register Authoritative Room Native Bridge
             addJavascriptInterface(nativeBridge, "FarmFinanceNative")
 
-            // Hardened WebView settings
+            // Enable third-party cookies for CORS preflights and cross-origin compatibility
+            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+            // Hardened WebView settings with specific cross-origin enablement
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
                 databaseEnabled = false // Deprecated Web SQL disabled
-                allowFileAccess = false // Hardened: No raw file system access
-                allowContentAccess = false // Hardened: No content provider access
-                allowFileAccessFromFileURLs = false
-                allowUniversalAccessFromFileURLs = false
+                allowFileAccess = true // Needed for some AssetLoader scenarios
+                allowContentAccess = true
+                allowFileAccessFromFileURLs = true
+                allowUniversalAccessFromFileURLs = true
+                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 setSupportZoom(false)

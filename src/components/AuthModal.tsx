@@ -89,6 +89,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
       authPull: { status: string; result: string };
       pureFetch: { status: string; result: string };
       nativeTest: { status: string; result: string };
+      wvSame: { status: string; result: string };
+      wvCross: { status: string; result: string };
     };
     urlParse: {
       protocol: string;
@@ -138,6 +140,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
       authPull: { status: 'PENDING', result: '-' },
       pureFetch: { status: 'PENDING', result: '-' },
       nativeTest: { status: 'PENDING', result: '-' },
+      wvSame: { status: 'PENDING', result: '-' },
+      wvCross: { status: 'PENDING', result: '-' },
     };
 
     setTestDetails({
@@ -369,6 +373,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
           }
         };
       });
+    }
+
+    // TASK 7 - WebView Diagnostics
+    try {
+      const resSame = await fetch('https://appassets.androidplatform.net/assets/www/index.html');
+      setTestDetails(prev => prev ? {
+        ...prev,
+        results: { ...prev.results, wvSame: { status: resSame.status === 200 ? 'PASS' : 'FAIL', result: `Same-Origin: HTTP ${resSame.status}` } }
+      } : null);
+    } catch (e: any) {
+      setTestDetails(prev => prev ? {
+        ...prev,
+        results: { ...prev.results, wvSame: { status: 'FAIL', result: `Same-Origin Error: ${e.message}` } }
+      } : null);
+    }
+
+    try {
+      const resCross = await fetch(healthUrl);
+      setTestDetails(prev => prev ? {
+        ...prev,
+        results: { ...prev.results, wvCross: { status: resCross.status === 200 ? 'PASS' : 'FAIL', result: `Cross-Origin: HTTP ${resCross.status}` } }
+      } : null);
+    } catch (e: any) {
+      setTestDetails(prev => prev ? {
+        ...prev,
+        results: { ...prev.results, wvCross: { status: 'FAIL', result: `Cross-Origin Error: ${e.message}` } }
+      } : null);
     }
 
     // TASK 4 - Native Test
@@ -660,8 +691,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
                       </div>
                       
                       {[
-                        { label: 'WEBVIEW FETCH (Health)', key: 'health' },
-                        { label: 'WEBVIEW FETCH (Pure)', key: 'pureFetch' },
+                        { label: 'WV Same-Origin', key: 'wvSame' },
+                        { label: 'WV Cross-Origin', key: 'wvCross' },
                         { label: 'NATIVE ANDROID HTTPS', key: 'nativeTest' },
                         { label: 'Cloud Push (Auth)', key: 'authPush' },
                         { label: 'Cloud Pull (Auth)', key: 'authPull' }
