@@ -74,28 +74,224 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
     }
   };
 
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testDetails, setTestDetails] = useState<{
+    diagnostic: {
+      origin: string;
+      baseUrl: string;
+      online: boolean;
+      userExists: boolean;
+      tokenObtained: boolean;
+    };
+    results: {
+      health: { status: string; result: string };
+      unauthPush: { status: string; result: string };
+      authPush: { status: string; result: string };
+      authPull: { status: string; result: string };
+    };
+  } | null>(null);
 
   const runConnectivityTest = async () => {
-    setTestResult('Running A: GET /api/health...');
     const baseUrl = SyncClient.getBaseUrl();
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : false;
+    const hasUser = !!user;
+    
+    const initialResults = {
+      health: { status: 'PENDING', result: '-' },
+      unauthPush: { status: 'PENDING', result: '-' },
+      authPush: { status: 'PENDING', result: '-' },
+      authPull: { status: 'PENDING', result: '-' },
+    };
+
+    setTestDetails({
+      diagnostic: {
+        origin: currentOrigin,
+        baseUrl: baseUrl || '(relative)',
+        online: isOnline,
+        userExists: hasUser,
+        tokenObtained: false
+      },
+      results: initialResults
+    });
+
+    let token: string | null = null;
+    let tokenSuccess = false;
+
+    if (hasUser) {
+      try {
+        token = await user.getIdToken();
+        tokenSuccess = true;
+      } catch (err) {
+        console.error('Failed to get ID token', err);
+      }
+    }
+
+    setTestDetails(prev => prev ? {
+      ...prev,
+      diagnostic: { ...prev.diagnostic, tokenObtained: tokenSuccess }
+    } : null);
+
+    // A - Health
     try {
       const resA = await fetch(`${baseUrl}/api/health`);
-      if (resA.status !== 200) throw new Error(`A failed: ${resA.status}`);
-      
-      setTestResult('A passed. Running B: POST /api/sync/push (no auth)...');
+      const resStatus = resA.status;
+      const pass = resStatus === 200;
+      setTestDetails(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          results: {
+            ...prev.results,
+            health: { status: pass ? 'PASS' : 'FAIL', result: `HTTP ${resStatus}` }
+          }
+        };
+      });
+    } catch (err: any) {
+      setTestDetails(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          results: {
+            ...prev.results,
+            health: { status: 'FAIL', result: err.message || 'Error' }
+          }
+        };
+      });
+    }
+
+    // B - Unauth Push
+    try {
       const resB = await fetch(`${baseUrl}/api/sync/push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ changes: [] })
       });
-      if (resB.status !== 401) throw new Error(`B failed: ${resB.status}`);
-
-      setTestResult('A and B passed. Running C: Authenticated Sync...');
-      await syncNow();
-      setTestResult('Connectivity Test Completed Successfully.');
+      const resStatus = resB.status;
+      const pass = resStatus === 401;
+      setTestDetails(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          results: {
+            ...prev.results,
+            unauthPush: { status: pass ? 'PASS' : 'FAIL', result: `HTTP ${resStatus}` }
+          }
+        };
+      });
     } catch (err: any) {
-      setTestResult(`Test Failed: ${err.message}`);
+      setTestDetails(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          results: {
+            ...prev.results,
+            unauthPush: { status: 'FAIL', result: err.message || 'Error' }
+          }
+        };
+      });
+    }
+
+    // C - Auth Push
+    if (hasUser && token) {
+      try {
+        const resC = await fetch(`${baseUrl}/api/sync/push`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ userId: user.uid, changes: [] })
+        });
+        const resStatus = resC.status;
+        const pass = resStatus === 200;
+        setTestDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            results: {
+              ...prev.results,
+              authPush: { status: pass ? 'PASS' : 'FAIL', result: `HTTP ${resStatus}` }
+            }
+          };
+        });
+      } catch (err: any) {
+        setTestDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            results: {
+              ...prev.results,
+              authPush: { status: 'FAIL', result: err.message || 'Error' }
+            }
+          };
+        });
+      }
+    } else {
+      setTestDetails(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          results: {
+            ...prev.results,
+            authPush: { status: 'SKIPPED', result: 'No Auth' }
+          }
+        };
+      });
+    }
+
+    // D - Auth Pull
+    if (hasUser && token) {
+      try {
+        const resD = await fetch(`${baseUrl}/api/sync/pull`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ userId: user.uid, sinceCursor: 0 })
+        });
+        const resStatus = resD.status;
+        const pass = resStatus === 200;
+        
+        let pullInfo = `HTTP ${resStatus}`;
+        if (pass) {
+          const data = await resD.json();
+          pullInfo = `HTTP 200 | Size: ${JSON.stringify(data).length}B | Cursor: ${data.currentServerCursor} | Bootstrap: ${data.isBootstrap}`;
+        }
+
+        setTestDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            results: {
+              ...prev.results,
+              authPull: { status: pass ? 'PASS' : 'FAIL', result: pullInfo }
+            }
+          };
+        });
+      } catch (err: any) {
+        setTestDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            results: {
+              ...prev.results,
+              authPull: { status: 'FAIL', result: err.message || 'Error' }
+            }
+          };
+        });
+      }
+    } else {
+      setTestDetails(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          results: {
+            ...prev.results,
+            authPull: { status: 'SKIPPED', result: 'No Auth' }
+          }
+        };
+      });
     }
   };
 
@@ -272,10 +468,69 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSyncComplete, c
                   Run Cloud Connectivity Test
                 </button>
 
-                {testResult && (
-                   <div className="mt-2 p-2 bg-slate-900 text-slate-100 text-[10px] font-mono rounded-lg overflow-x-auto whitespace-pre-wrap">
-                     {testResult}
-                   </div>
+                {testDetails && (
+                  <div className="mt-3 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                    {/* Diagnostic Info */}
+                    <div className="p-2 bg-slate-900 text-slate-100 text-[9px] font-mono rounded-lg space-y-1">
+                      <div className="text-emerald-400 font-bold border-b border-slate-700 pb-0.5 mb-1 flex items-center justify-between">
+                        <span>DIAGNOSTIC ENV</span>
+                        <span>{new Date().toLocaleTimeString()}</span>
+                      </div>
+                      <div className="grid grid-cols-[70px_1fr] gap-x-2">
+                        <span className="text-slate-500">Origin:</span>
+                        <span className="truncate">{testDetails.diagnostic.origin}</span>
+                        <span className="text-slate-500">API Base:</span>
+                        <span className="truncate">{testDetails.diagnostic.baseUrl}</span>
+                        <span className="text-slate-500">Network:</span>
+                        <span className={testDetails.diagnostic.online ? 'text-emerald-400' : 'text-rose-400'}>
+                          {testDetails.diagnostic.online ? 'ONLINE' : 'OFFLINE'}
+                        </span>
+                        <span className="text-slate-500">Auth User:</span>
+                        <span>{testDetails.diagnostic.userExists ? 'YES' : 'NO'}</span>
+                        <span className="text-slate-500">ID Token:</span>
+                        <span className={testDetails.diagnostic.tokenObtained ? 'text-emerald-400' : 'text-rose-400'}>
+                          {testDetails.diagnostic.tokenObtained ? 'OBTAINED' : 'FAILED/NONE'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Test Results */}
+                    <div className="p-2 bg-slate-800 text-slate-100 text-[10px] font-mono rounded-lg space-y-1.5">
+                      <div className="text-emerald-400 font-bold border-b border-slate-700 pb-0.5 mb-1">
+                        CONNECTIVITY RESULTS
+                      </div>
+                      
+                      {[
+                        { label: 'A Health', key: 'health' },
+                        { label: 'B Unauth Push', key: 'unauthPush' },
+                        { label: 'C Auth Push', key: 'authPush' },
+                        { label: 'D Auth Pull', key: 'authPull' }
+                      ].map(test => {
+                        const res = testDetails.results[test.key as keyof typeof testDetails.results];
+                        const isPass = res.status === 'PASS';
+                        const isFail = res.status === 'FAIL';
+                        const isPending = res.status === 'PENDING';
+                        
+                        return (
+                          <div key={test.key} className="space-y-0.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-300">{test.label}</span>
+                              <span className={`font-bold ${
+                                isPass ? 'text-emerald-400' : 
+                                isFail ? 'text-rose-400' : 
+                                isPending ? 'text-amber-400 animate-pulse' : 'text-slate-500'
+                              }`}>
+                                {res.status}
+                              </span>
+                            </div>
+                            <div className="text-[9px] text-slate-400 pl-2 border-l border-slate-700 break-all leading-tight">
+                              {res.result}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
 

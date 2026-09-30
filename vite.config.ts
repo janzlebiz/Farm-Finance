@@ -10,9 +10,7 @@ export default defineConfig(() => {
   return {
     base: process.env.VITE_BASE_URL || './',
     plugins: [
-      react({
-        fastRefresh: false
-      }),
+      react(),
       tailwindcss(),
       !isAndroidEmbedded && VitePWA({
         registerType: 'autoUpdate',
