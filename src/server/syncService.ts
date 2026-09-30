@@ -62,6 +62,42 @@ function cleanUndefined(obj: any): any {
   return cleaned;
 }
 
+/**
+ * Deeply converts an object to a plain JavaScript object, converting Firestore Timestamps
+ * and other special objects to primitives that are safe for JSON serialization.
+ */
+function toPlainObject(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  // Handle Firestore Timestamp
+  if (typeof obj.toDate === 'function') {
+    return obj.toDate().toISOString();
+  }
+
+  // Handle Firestore DocumentReference
+  if (typeof obj.path === 'string' && typeof obj.id === 'string' && obj.parent) {
+    return obj.path;
+  }
+
+  // Handle arrays
+  if (Array.isArray(obj)) {
+    return obj.map(toPlainObject);
+  }
+
+  // Handle plain objects
+  const plain: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    // Skip internal fields and functions
+    if (key.startsWith('_') || typeof value === 'function') {
+      continue;
+    }
+    plain[key] = toPlainObject(value);
+  }
+  return plain;
+}
+
 export class ServerSyncService {
   /**
    * Process client push request with authoritative server validation,
@@ -226,11 +262,14 @@ export class ServerSyncService {
       throw new Error('Invalid or missing authenticated userId for sync operation');
     }
 
+    console.log(`[PULL_DEBUG] processPull started uid=${userId} sinceCursor=${sinceCursor}`);
+
     const metaDoc = await adminDb.doc(`users/${userId}/_sync/meta`).get();
     const currentServerCursor = metaDoc.exists ? (metaDoc.data()?.current_cursor || 0) : 0;
 
     // Bootstrap Sync (sinceCursor <= 0 or client cursor is corrupted/ahead of server)
     if (sinceCursor <= 0 || sinceCursor > currentServerCursor) {
+      console.log(`[PULL_DEBUG] Performing bootstrap pull currentServerCursor=${currentServerCursor}`);
       const dataset: FullSyncDataset = {
         buyers: [],
         suppliers: [],
@@ -244,6 +283,8 @@ export class ServerSyncService {
       };
 
       const businessDataSnap = await adminDb.collection(`users/${userId}/business_data`).get();
+      console.log(`[PULL_DEBUG] Firestore business_data read complete. Size: ${businessDataSnap.size}`);
+      
       businessDataSnap.forEach((doc) => {
         const data = doc.data();
         const docId = doc.id;
@@ -251,9 +292,11 @@ export class ServerSyncService {
         const entityType = firstUnderscore > 0 ? (docId.substring(0, firstUnderscore) as SyncEntityType) : null;
 
         if (entityType && entityType in dataset) {
-          (dataset[entityType] as any[]).push(data);
+          (dataset[entityType] as any[]).push(toPlainObject(data));
         }
       });
+
+      console.log(`[PULL_DEBUG] processPull completed cursor=${currentServerCursor} bootstrap=true counts=${Object.entries(dataset).map(([k, v]) => `${k}:${v.length}`).join(',')}`);
 
       return {
         currentServerCursor,
@@ -263,13 +306,16 @@ export class ServerSyncService {
     }
 
     // Incremental Sync (sinceCursor > 0)
+    console.log(`[PULL_DEBUG] Performing incremental pull from ${sinceCursor + 1} to ${currentServerCursor}`);
     const changes: SyncChangeLogEntry[] = [];
     for (let c = sinceCursor + 1; c <= currentServerCursor; c++) {
       const changeDoc = await adminDb.doc(`users/${userId}/_sync/change_log_${c}`).get();
       if (changeDoc.exists) {
-        changes.push(changeDoc.data() as SyncChangeLogEntry);
+        changes.push(toPlainObject(changeDoc.data()) as SyncChangeLogEntry);
       }
     }
+
+    console.log(`[PULL_DEBUG] processPull completed cursor=${currentServerCursor} bootstrap=false changesCount=${changes.length}`);
 
     return {
       currentServerCursor,

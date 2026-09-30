@@ -49,23 +49,22 @@ async function createServer() {
   // Secure and robust CORS handling for Android WebViews & trusted web origins
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin) {
-      const isAllowed =
-        origin === 'https://appassets.androidplatform.net' ||
-        /^https:\/\/[a-z0-9-]+\.asia-east1\.run\.app$/.test(origin) ||
-        /^https:\/\/[a-z0-9-]+\.run\.app$/.test(origin) ||
-        /^http:\/\/localhost(:\d+)?$/.test(origin);
+    const isAllowed = !origin || 
+      origin === 'https://appassets.androidplatform.net' ||
+      /^https:\/\/[a-z0-9-]+\.asia-east1\.run\.app$/.test(origin) ||
+      /^https:\/\/[a-z0-9-]+\.run\.app$/.test(origin) ||
+      /^http:\/\/localhost(:\d+)?$/.test(origin);
 
-      if (isAllowed) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE');
-        res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-        res.setHeader('Access-Control-Max-Age', '86400');
-      }
-    } else {
-      // For direct API requests or where Origin header is omitted (e.g. legacy/testing)
-      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    if (isAllowed && origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    } else if (!origin) {
+      // For non-browser clients or direct API requests, we still want to allow common headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
     }
+
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Max-Age', '86400');
 
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
@@ -95,13 +94,23 @@ async function createServer() {
 
   // Authoritative Trusted Server Sync Pull Endpoint
   app.post('/api/sync/pull', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    const start = Date.now();
+    const userUid = req.userUid!;
+    const sinceCursor = typeof req.body.sinceCursor === 'number' ? req.body.sinceCursor : 0;
+    
+    console.log(`[PULL_DEBUG] request received uid=${userUid} sinceCursor=${sinceCursor}`);
+    
     try {
-      const userUid = req.userUid!;
-      const sinceCursor = typeof req.body.sinceCursor === 'number' ? req.body.sinceCursor : 0;
       const response = await ServerSyncService.processPull(userUid, sinceCursor);
+      const elapsed = Date.now() - start;
+      const responseSize = JSON.stringify(response).length;
+      
+      console.log(`[PULL_DEBUG] response sent status=200 elapsed=${elapsed}ms size=${responseSize}bytes cursor=${response.currentServerCursor} bootstrap=${response.isBootstrap}`);
       res.json(response);
     } catch (err: any) {
-      console.error('Error in /api/sync/pull:', err);
+      const elapsed = Date.now() - start;
+      console.error(`[PULL_DEBUG] request failed status=400 elapsed=${elapsed}ms error=${err.message}`);
+      if (err.stack) console.error(err.stack);
       res.status(400).json({ error: err.message || 'Pull sync failed' });
     }
   });
@@ -140,6 +149,10 @@ async function createServer() {
         const indexPath = path.resolve(__dirname, 'index.html');
         let template = fs.readFileSync(indexPath, 'utf-8');
         template = await vite.transformIndexHtml(url, template);
+        
+        // Strip the Vite client script in dev mode to prevent WebSocket connection errors [vite]
+        // because HMR/WebSockets are often blocked in the AI Studio iframe environment.
+        template = template.replace(/<script type="module" src="\/@vite\/client"><\/script>/, '');
         
         res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
       } catch (e: any) {
