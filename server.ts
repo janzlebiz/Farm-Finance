@@ -40,8 +40,11 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
 
 async function createServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  // AI Studio requires port 3000. Force it to avoid EADDRINUSE on other ports like 8080.
+  const PORT = 3000;
   const isProd = process.env.NODE_ENV === 'production';
+
+  console.log(`[Farm Finance] Starting server in ${isProd ? 'production' : 'development'} mode on port ${PORT}`);
 
   // Secure and robust CORS handling for Android WebViews & trusted web origins
   app.use((req, res, next) => {
@@ -122,7 +125,10 @@ async function createServer() {
     // Development: integrate Vite dev server middlewares
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        hmr: false
+      },
       appType: 'custom'
     });
     app.use(vite.middlewares);
@@ -134,6 +140,7 @@ async function createServer() {
         const indexPath = path.resolve(__dirname, 'index.html');
         let template = fs.readFileSync(indexPath, 'utf-8');
         template = await vite.transformIndexHtml(url, template);
+        
         res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
       } catch (e: any) {
         vite.ssrFixStacktrace(e);

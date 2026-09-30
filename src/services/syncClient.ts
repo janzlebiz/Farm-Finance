@@ -10,14 +10,19 @@ let customBaseUrl: string | null = null;
 
 function getSyncApiBaseUrl(): string {
   if (customBaseUrl !== null) {
-    return customBaseUrl;
+    return customBaseUrl.trim().replace(/\/+$/, '');
   }
-  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SYNC_API_BASE_URL) {
-    return (import.meta.env.VITE_SYNC_API_BASE_URL as string).replace(/\/+$/, '');
+  
+  // In the AI Studio web preview, we MUST use relative paths to avoid CORS and domain typos.
+  // We only use absolute URLs if VITE_ANDROID_EMBEDDED is true (for the standalone APK).
+  const isAndroidEmbedded = import.meta.env.VITE_ANDROID_EMBEDDED === 'true';
+  const envUrl = import.meta.env.VITE_SYNC_API_BASE_URL;
+
+  if (isAndroidEmbedded && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    return envUrl.trim().replace(/\/+$/, '');
   }
-  if (typeof window !== 'undefined' && (window as any).__SYNC_API_BASE_URL__) {
-    return (window as any).__SYNC_API_BASE_URL__.replace(/\/+$/, '');
-  }
+  
+  // Default to relative path in web browser to use the current origin
   return '';
 }
 
@@ -26,7 +31,8 @@ export class SyncClient {
    * Sets custom base URL for standalone Android APK or remote hosting
    */
   static setBaseUrl(url: string | null): void {
-    customBaseUrl = url ? url.replace(/\/+$/, '') : null;
+    customBaseUrl = url ? url.trim().replace(/\/+$/, '') : null;
+    console.log(`[SyncClient] Custom Base URL set to: ${customBaseUrl || 'RELATIVE'}`);
   }
 
   /**
@@ -37,9 +43,11 @@ export class SyncClient {
   }
 
   private static logDiagnostic(type: string, details: any) {
+    const baseUrl = getSyncApiBaseUrl();
     console.log(`[SYNC_DIAGNOSTIC][${type}]`, JSON.stringify({
       origin: typeof window !== 'undefined' ? window.location.origin : 'unknown',
-      baseUrl: getSyncApiBaseUrl(),
+      baseUrl,
+      resolvedBaseUrl: baseUrl || '(relative)',
       timestamp: new Date().toISOString(),
       navigatorOnline: typeof navigator !== 'undefined' ? navigator.onLine : 'unknown',
       ...details
@@ -65,7 +73,10 @@ export class SyncClient {
 
   static async push(request: SyncPushRequest, timeoutMs = 15000): Promise<SyncPushResponse> {
     const start = Date.now();
-    const endpoint = `${getSyncApiBaseUrl()}/api/sync/push`;
+    const baseUrl = getSyncApiBaseUrl();
+    const endpoint = `${baseUrl}/api/sync/push`;
+    
+    console.log(`[SyncClient] PUSH Request to: ${endpoint || '(relative)/api/sync/push'}`);
     
     try {
       const headers = await this.getAuthHeaders();
@@ -119,7 +130,10 @@ export class SyncClient {
    */
   static async pull(request: SyncPullRequest, timeoutMs = 15000): Promise<SyncPullResponse> {
     const start = Date.now();
-    const endpoint = `${getSyncApiBaseUrl()}/api/sync/pull`;
+    const baseUrl = getSyncApiBaseUrl();
+    const endpoint = `${baseUrl}/api/sync/pull`;
+    
+    console.log(`[SyncClient] PULL Request to: ${endpoint || '(relative)/api/sync/pull'}`);
     
     try {
       const headers = await this.getAuthHeaders();
