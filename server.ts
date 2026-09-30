@@ -79,6 +79,16 @@ async function createServer() {
 
   app.use(express.json({ limit: '10mb' }));
 
+  // Diagnostic: Auth Config
+  app.get('/api/diagnostics/auth-config', (_req, res) => {
+    res.json({
+      projectId: adminApp.options.projectId,
+      databaseId: 'ai-studio-farmfinance-93149cfe-1ff5-4e4b-a384-aa96984b5b0f',
+      adminAuthInitialized: !!adminAuth,
+      adminDbInitialized: !!adminDb
+    });
+  });
+
   // Health check
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
